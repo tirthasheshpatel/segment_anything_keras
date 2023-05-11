@@ -1,3 +1,6 @@
+Pillow
+numpy
 tensorflow
 keras
 keras-cv
+pycocotools

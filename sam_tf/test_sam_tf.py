@@ -159,14 +159,11 @@ def test_mask_decoder():
     mask_decoder = MaskDecoder(
         transformer_dim=256,
         transformer=TwoWayTransformer(
-            depth=2,
-            embedding_dim=256,
-            mlp_dim=2048,
-            num_heads=8
+            depth=2, embedding_dim=256, mlp_dim=2048, num_heads=8
         ),
         num_multimask_outputs=3,
         iou_head_depth=3,
-        iou_head_hidden_dim=256
+        iou_head_hidden_dim=256,
     )
     masks, iou_pred = mask_decoder(
         image_embeddings=image_embeddings,

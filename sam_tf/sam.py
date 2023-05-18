@@ -23,10 +23,10 @@ class SegmentAnythingModel(models.Model):
         self.pixel_std = tf.constant(pixel_std, dtype=self.dtype)
 
     def call(self, batched_input):
-        images = tf.stack(
+        images = tf.concat(
             [self.preprocess_images(x["image"]) for x in batched_input], axis=0
         )
-        image_encodings = self.image_encoder(images)
+        image_encodings = tf.unstack(self.image_encoder(images), axis=0)
 
         outputs = []
         for image_record, image_encoded in zip(batched_input, image_encodings):
@@ -42,7 +42,7 @@ class SegmentAnythingModel(models.Model):
                 mask=image_record.get("mask_inputs", None),
             )
             low_res_masks, iou_scores = self.mask_decoder(
-                image_embeddings=image_encoded,
+                image_embeddings=image_encoded[tf.newaxis, ...],
                 image_pe=self.prompt_encoder.get_dense_pe(),
                 sparse_prompt_embeddings=sparse_embeddings,
                 dense_prompt_embeddings=dense_embeddings,
@@ -53,7 +53,7 @@ class SegmentAnythingModel(models.Model):
                 input_size=image_record["image"].shape[1:3],
                 original_size=image_record["original_size"],
             )
-            masks = masks > self.mask_threshold
+            # masks = masks > self.mask_threshold
             outputs.append(
                 {
                     "masks": masks,

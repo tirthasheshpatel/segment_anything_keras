@@ -81,9 +81,9 @@ class PromptEncoder(models.Model):
                 layers.Conv2D(embed_dim, kernel_size=1),
             ]
         )
-        # self.mask_downscaler.build(
-        #     [None, 4 * image_embedding_size[0], 4 * image_embedding_size[1], 1]
-        # )
+        self.mask_downscaler.build(
+            [None, 4 * image_embedding_size[0], 4 * image_embedding_size[1], 1]
+        )
         self.no_mask_embed = layers.Embedding(1, embed_dim)
 
         # Build embeddings layers: I don't like this, maybe we could just have embedding matrices

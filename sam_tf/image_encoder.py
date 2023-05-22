@@ -141,7 +141,7 @@ def window_partition(x, window_size):
 def window_unpartition(windows, window_size, HW_padded, HW):
     H_padded, W_padded = HW_padded
     H, W = HW
-    B = windows.shape[0] // ((H // window_size) * (W // window_size))
+    B = windows.shape[0] // ((H_padded // window_size) * (W_padded // window_size))
     x = tf.reshape(
         windows,
         shape=(

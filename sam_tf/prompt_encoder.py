@@ -122,11 +122,8 @@ class PromptEncoder(models.Model):
         )
         point_embeddings = tf.where(
             labels == -1,
-            tf.broadcast_to(
-                self.not_a_point_embed.weights[0],
-                point_embeddings.shape
-            ),
-            point_embeddings
+            tf.broadcast_to(self.not_a_point_embed.weights[0], point_embeddings.shape),
+            point_embeddings,
         )
         return point_embeddings
 
@@ -142,12 +139,8 @@ class PromptEncoder(models.Model):
         bottom_right_embedding = (
             corner_embedding[:, 1, :] + self.bottom_right_corner_embed.weights[0]
         )
-        corner_embedding = (
-            corner_embedding
-            + tf.stack(
-                [top_left_embedding, bottom_right_embedding],
-                axis=1
-            )
+        corner_embedding = corner_embedding + tf.stack(
+            [top_left_embedding, bottom_right_embedding], axis=1
         )
         return corner_embedding
 

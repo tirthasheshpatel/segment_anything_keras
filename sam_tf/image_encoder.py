@@ -55,7 +55,16 @@ def add_decomposed_rel_pos(
 
 
 class MultiHeadAttentionWithRelativePE(layers.Layer):
-    def __init__(self, *, num_heads, key_dim, use_bias=True, use_rel_pos=False, input_size=None, **kwargs):
+    def __init__(
+        self,
+        *,
+        num_heads,
+        key_dim,
+        use_bias=True,
+        use_rel_pos=False,
+        input_size=None,
+        **kwargs
+    ):
         super().__init__(**kwargs)
         self.num_heads = num_heads
         self.key_dim = key_dim
@@ -68,7 +77,9 @@ class MultiHeadAttentionWithRelativePE(layers.Layer):
         self.use_rel_pos = use_rel_pos
         if self.use_rel_pos:
             if input_size is None:
-                raise ValueError("Input size must be provided if using relative positional encoding.")
+                raise ValueError(
+                    "Input size must be provided if using relative positional encoding."
+                )
             self.rel_pos_h = self.add_weight(
                 name="rel_pos_h",
                 shape=(2 * self.input_size[0] - 1, self.key_dim),
@@ -91,7 +102,7 @@ class MultiHeadAttentionWithRelativePE(layers.Layer):
         qkv = tf.reshape(qkv, (3, B * self.num_heads, H * W, self.key_dim))
         queries, keys, values = tf.unstack(qkv, axis=0)
         attention_map = (queries * self.scale) @ tf.transpose(keys, perm=(0, 2, 1))
-        
+
         if self.use_rel_pos:
             attention_map = add_decomposed_rel_pos(
                 attention_map, queries, self.rel_pos_h, self.rel_pos_w, (H, W), (H, W)
@@ -210,18 +221,12 @@ class WindowedTransformerEncoder(layers.Layer):
         x = x + self.dense2(self.activation1(self.dense1(self.layer_norm2(x))))
 
         return x
-    
-    
+
+
 class PatchingAndEmbedding(layers.Layer):
-    def __init__(
-        self,
-        kernel_size=(16, 16),
-        strides=(16, 16),
-        embed_dim=768,
-        **kwargs
-    ):
+    def __init__(self, kernel_size=(16, 16), strides=(16, 16), embed_dim=768, **kwargs):
         super().__init__(**kwargs)
-        
+
         self.projection = layers.Conv2D(
             embed_dim, kernel_size=kernel_size, strides=strides
         )
@@ -276,7 +281,12 @@ class ImageEncoder(models.Model):
         if self.use_abs_pos:
             self.pos_embed = self.add_weight(
                 name="pos_embed",
-                shape=(1, self.img_size // self.patch_size, self.img_size // self.patch_size, self.embed_dim),
+                shape=(
+                    1,
+                    self.img_size // self.patch_size,
+                    self.img_size // self.patch_size,
+                    self.embed_dim,
+                ),
                 initializer="zeros",
                 trainable=True,
             )

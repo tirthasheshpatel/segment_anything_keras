@@ -19,14 +19,14 @@ class AttentionWithDownsampling(layers.Layer):
 
         # Upsample
         self.out_proj = layers.Dense(self.key_dim * self.num_heads)
-        
+
         # XXX: embedding_dim = key_dim * num_heads
-        
+
     def __separate_heads(self, x):
         B, N, C = x.shape
         x = tf.reshape(x, (B, N, self.num_heads, C // self.num_heads))
         return tf.transpose(x, perm=(0, 2, 1, 3))
-    
+
     def __recombine_heads(self, x):
         B, N_H, N_T, C_PH = x.shape
         x = tf.transpose(x, perm=(0, 2, 1, 3))
@@ -36,18 +36,18 @@ class AttentionWithDownsampling(layers.Layer):
         query = self.query_proj(query)
         key = self.key_proj(key)
         value = self.value_proj(value)
-        
+
         # Separate into heads
         query = self.__separate_heads(query)
         key = self.__separate_heads(key)
         value = self.__separate_heads(value)
-        
+
         # Attention
         C_PH = query.shape[-1]
         out = query @ tf.transpose(key, (0, 1, 3, 2))
         out = out / tf.sqrt(tf.cast(C_PH, dtype=self.dtype))
         out = tf.math.softmax(out, axis=-1)
-        
+
         # Get output
         attention_map = out @ value
         attention_map = self.__recombine_heads(attention_map)

@@ -103,7 +103,7 @@ def test_prompt_encoder():
     sparse_embeddings, dense_embeddings = prompt_encoder(
         points=points, labels=labels, box=box, mask=input_mask
     )
-    
+
     num_parameters = sum(np.prod(x.shape) for x in prompt_encoder.trainable_weights)
 
     assert sparse_embeddings.shape == (7, 12, 256)

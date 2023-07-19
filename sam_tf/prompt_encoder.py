@@ -26,7 +26,7 @@ class RandomFrequencyPositionalEmbeddings(layers.Layer):
         H, W = tf.cast(H, tf.int64), tf.cast(W, tf.int64)
         grid = tf.ones(shape=(H, W), dtype=self.dtype)
         y_embed = tf.cumsum(grid, axis=0) - 0.5
-        x_embed = tf.cumsum(grid, axis=0) - 0.5
+        x_embed = tf.cumsum(grid, axis=1) - 0.5
         y_embed = y_embed / tf.cast(H, tf.float32)
         x_embed = x_embed / tf.cast(W, tf.float32)
         return self.__positional_encodings(tf.stack([x_embed, y_embed], axis=-1))
@@ -65,6 +65,7 @@ class PromptEncoder(models.Model):
         self.background_point_embed = layers.Embedding(1, embed_dim)
         self.top_left_corner_embed = layers.Embedding(1, embed_dim)
         self.bottom_right_corner_embed = layers.Embedding(1, embed_dim)
+        self.not_a_point_embed = layers.Embedding(1, embed_dim)
 
         self.mask_input_size = (
             4 * image_embedding_size[0],
@@ -93,6 +94,7 @@ class PromptEncoder(models.Model):
             self.background_point_embed,
             self.top_left_corner_embed,
             self.bottom_right_corner_embed,
+            self.not_a_point_embed,
             self.no_mask_embed,
         ]:
             layer.build([])
@@ -102,8 +104,13 @@ class PromptEncoder(models.Model):
             tf.newaxis, ...
         ]
 
-    def __embed_points(self, points, labels):
+    def __embed_points(self, points, labels, pad):
         points = points + 0.5
+        if pad:
+            padding_point = tf.zeros((points.shape[0], 1, 2), dtype=self.dtype)
+            padding_label = -tf.ones((labels.shape[0], 1), dtype=self.dtype)
+            points = tf.concat([points, padding_point], axis=1)
+            labels = tf.concat([labels, padding_label], axis=1)
         point_embeddings = self.positional_embedding_layer.call_with_coords(
             points, self.input_image_size
         )
@@ -112,6 +119,14 @@ class PromptEncoder(models.Model):
             labels == 0,
             point_embeddings + self.background_point_embed.weights[0],
             point_embeddings + self.foreground_point_embed.weights[0],
+        )
+        point_embeddings = tf.where(
+            labels == -1,
+            tf.broadcast_to(
+                self.not_a_point_embed.weights[0],
+                point_embeddings.shape
+            ),
+            point_embeddings
         )
         return point_embeddings
 
@@ -126,6 +141,13 @@ class PromptEncoder(models.Model):
         )
         bottom_right_embedding = (
             corner_embedding[:, 1, :] + self.bottom_right_corner_embed.weights[0]
+        )
+        corner_embedding = (
+            corner_embedding
+            + tf.stack(
+                [top_left_embedding, bottom_right_embedding],
+                axis=1
+            )
         )
         return corner_embedding
 
@@ -146,7 +168,7 @@ class PromptEncoder(models.Model):
         if points is not None:
             if labels is None:
                 raise ValueError("`labels` must also be provided with `points`")
-            point_embeddings = self.__embed_points(points, labels)
+            point_embeddings = self.__embed_points(points, labels, pad=(box is None))
             sparse_embeddings = tf.concat([sparse_embeddings, point_embeddings], axis=1)
         if box is not None:
             box_embeddings = self.__embed_box(box)

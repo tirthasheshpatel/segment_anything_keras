@@ -17,18 +17,40 @@ class AttentionWithDownsampling(layers.Layer):
         self.key_proj = layers.Dense(self.internal_dims * self.num_heads)
         self.value_proj = layers.Dense(self.internal_dims * self.num_heads)
 
-        self.attention_block = layers.MultiHeadAttention(
-            num_heads=num_heads, key_dim=self.internal_dims
-        )
-
         # Upsample
         self.out_proj = layers.Dense(self.key_dim * self.num_heads)
+        
+        # XXX: embedding_dim = key_dim * num_heads
+        
+    def __separate_heads(self, x):
+        B, N, C = x.shape
+        x = tf.reshape(x, (B, N, self.num_heads, C // self.num_heads))
+        return tf.transpose(x, perm=(0, 2, 1, 3))
+    
+    def __recombine_heads(self, x):
+        B, N_H, N_T, C_PH = x.shape
+        x = tf.transpose(x, perm=(0, 2, 1, 3))
+        return tf.reshape(x, (B, N_T, N_H * C_PH))
 
     def call(self, query, value, key):
         query = self.query_proj(query)
         key = self.key_proj(key)
         value = self.value_proj(value)
-        attention_map = self.attention_block(query=query, key=key, value=value)
+        
+        # Separate into heads
+        query = self.__separate_heads(query)
+        key = self.__separate_heads(key)
+        value = self.__separate_heads(value)
+        
+        # Attention
+        C_PH = query.shape[-1]
+        out = query @ tf.transpose(key, (0, 1, 3, 2))
+        out = out / tf.sqrt(tf.cast(C_PH, dtype=self.dtype))
+        out = tf.math.softmax(out, axis=-1)
+        
+        # Get output
+        attention_map = out @ value
+        attention_map = self.__recombine_heads(attention_map)
         return self.out_proj(attention_map)
 
 
@@ -52,7 +74,7 @@ class TwoWayAttention(layers.Layer):
         self.attention_downsample_rate = attention_downsample_rate
         self.activation = activation
 
-        self.self_attention = layers.MultiHeadAttention(
+        self.self_attention = AttentionWithDownsampling(
             num_heads=num_heads, key_dim=key_dim
         )
         self.layer_norm1 = layers.LayerNormalization()
@@ -80,7 +102,7 @@ class TwoWayAttention(layers.Layer):
 
     def call(self, queries, keys, query_pe, key_pe):
         if self.skip_first_layer_pe:
-            queries = self.self_attention(queries, queries, queries)
+            queries = self.self_attention(query=queries, value=queries, key=queries)
         else:
             queries_with_pe = queries + query_pe
             attention_map = self.self_attention(
@@ -103,7 +125,7 @@ class TwoWayAttention(layers.Layer):
 
         queries_with_pe = queries + query_pe
         keys_with_pe = keys + key_pe
-        attention_map = self.cross_attention_token_to_image(
+        attention_map = self.cross_attention_image_to_token(
             query=keys_with_pe, key=queries_with_pe, value=queries
         )
         keys = keys + attention_map
@@ -271,6 +293,7 @@ class MaskDecoder(models.Model):
         )
         tokens = tf.concat([output_tokens, sparse_prompt_embeddings], axis=1)
 
+        # TODO: is this the same as torch.repeat_interleave?
         source = tf.broadcast_to(
             image_embeddings,
             shape=(
@@ -281,6 +304,7 @@ class MaskDecoder(models.Model):
             ),
         )
         source = source + dense_prompt_embeddings
+        # TODO: is this the same as torch.repeat_interleave?
         positional_source = tf.broadcast_to(image_pe, shape=image_embeddings.shape)
         B, H, W, C = source.shape
 

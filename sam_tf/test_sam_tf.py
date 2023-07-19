@@ -10,6 +10,9 @@ from sam_tf.prompt_encoder import PromptEncoder
 from sam_tf.mask_decoder import MaskDecoder, TwoWayAttention, TwoWayTransformer
 
 
+tf.debugging.disable_traceback_filtering()
+
+
 def test_multi_head_attention_with_relative_pe():
     attention_with_rel_pe = MultiHeadAttentionWithRelativePE(
         num_heads=16, key_dim=1280 // 16, use_bias=True, input_size=(64, 64)
@@ -86,6 +89,7 @@ def get_points_labels_box_mask(B):
         ],
         dtype=tf.float32,
     )
+    box = box[:, :B, ...]
     input_mask = tf.convert_to_tensor(
         1.0 * (np.random.rand(B, 256, 256, 1) > 0.5), dtype=tf.float32
     )
@@ -99,8 +103,12 @@ def test_prompt_encoder():
     sparse_embeddings, dense_embeddings = prompt_encoder(
         points=points, labels=labels, box=box, mask=input_mask
     )
+    
+    num_parameters = sum(np.prod(x.shape) for x in prompt_encoder.trainable_weights)
+
     assert sparse_embeddings.shape == (7, 12, 256)
     assert dense_embeddings.shape == (7, 64, 64, 256)
+    assert num_parameters == 6220
 
 
 def test_two_way_attention():
@@ -172,5 +180,7 @@ def test_mask_decoder():
         dense_prompt_embeddings=dense_embeddings[:1, ...],
         multimask_output=True,
     )
+    num_parameters = sum(np.prod(x.shape) for x in mask_decoder.trainable_variables)
     assert masks.shape == (1, 3, 256, 256)
     assert iou_pred.shape == (1, 3)
+    assert num_parameters == 4058340

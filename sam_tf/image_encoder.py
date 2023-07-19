@@ -2,7 +2,6 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras import models
-import keras_cv
 
 
 def get_rel_pos(query_size, key_size, rel_pos):
@@ -56,52 +55,47 @@ def add_decomposed_rel_pos(
 
 
 class MultiHeadAttentionWithRelativePE(layers.Layer):
-    def __init__(self, *, num_heads, key_dim, use_bias, input_size, **kwargs):
+    def __init__(self, *, num_heads, key_dim, use_bias=True, use_rel_pos=False, input_size=None, **kwargs):
         super().__init__(**kwargs)
         self.num_heads = num_heads
         self.key_dim = key_dim
         self.scale = self.key_dim**0.5
 
-        self.queries = layers.Dense(key_dim * self.num_heads, use_bias=use_bias)
-        self.keys = layers.Dense(key_dim * self.num_heads, use_bias=use_bias)
-        self.values = layers.Dense(key_dim * self.num_heads, use_bias=use_bias)
+        self.qkv = layers.Dense(key_dim * self.num_heads * 3, use_bias=use_bias)
         self.projection = layers.Dense(key_dim * self.num_heads)
 
         self.input_size = input_size
-        self.rel_pos_h = self.add_weight(
-            name="rel_pos_h",
-            shape=(2 * self.input_size[0] - 1, self.key_dim),
-            initializer="zeros",
-            trainable=True,
-        )
-        self.rel_pos_w = self.add_weight(
-            name="rel_pos_w",
-            shape=(2 * self.input_size[0] - 1, self.key_dim),
-            initializer="zeros",
-            trainable=True,
-        )
+        self.use_rel_pos = use_rel_pos
+        if self.use_rel_pos:
+            if input_size is None:
+                raise ValueError("Input size must be provided if using relative positional encoding.")
+            self.rel_pos_h = self.add_weight(
+                name="rel_pos_h",
+                shape=(2 * self.input_size[0] - 1, self.key_dim),
+                initializer="zeros",
+                trainable=True,
+            )
+            self.rel_pos_w = self.add_weight(
+                name="rel_pos_w",
+                shape=(2 * self.input_size[1] - 1, self.key_dim),
+                initializer="zeros",
+                trainable=True,
+            )
 
     def call(self, x):
         B, H, W, C = x.shape
-        queries = tf.transpose(
-            tf.reshape(self.queries(x), shape=(B, H * W, self.num_heads, self.key_dim)),
-            perm=(0, 2, 1, 3),
+        qkv = tf.transpose(
+            tf.reshape(self.qkv(x), shape=(B, H * W, 3, self.num_heads, self.key_dim)),
+            perm=(2, 0, 3, 1, 4),
         )
-        queries = tf.reshape(queries, shape=(B * self.num_heads, H * W, self.key_dim))
-        keys = tf.transpose(
-            tf.reshape(self.keys(x), shape=(B, H * W, self.num_heads, self.key_dim)),
-            perm=(0, 2, 1, 3),
-        )
-        keys = tf.reshape(keys, shape=(B * self.num_heads, H * W, self.key_dim))
-        values = tf.transpose(
-            tf.reshape(self.values(x), shape=(B, H * W, self.num_heads, self.key_dim)),
-            perm=(0, 2, 1, 3),
-        )
-        values = tf.reshape(values, shape=(B * self.num_heads, H * W, self.key_dim))
+        qkv = tf.reshape(qkv, (3, B * self.num_heads, H * W, self.key_dim))
+        queries, keys, values = tf.unstack(qkv, axis=0)
         attention_map = (queries * self.scale) @ tf.transpose(keys, perm=(0, 2, 1))
-        attention_map = add_decomposed_rel_pos(
-            attention_map, queries, self.rel_pos_h, self.rel_pos_w, (H, W), (H, W)
-        )
+        
+        if self.use_rel_pos:
+            attention_map = add_decomposed_rel_pos(
+                attention_map, queries, self.rel_pos_h, self.rel_pos_w, (H, W), (H, W)
+            )
         attention_map = tf.math.softmax(attention_map, axis=-1)
         x = tf.reshape(
             attention_map @ values, shape=(B, self.num_heads, H, W, self.key_dim)
@@ -168,10 +162,10 @@ class WindowedTransformerEncoder(layers.Layer):
         project_dim,
         mlp_dim,
         num_heads,
-        use_bias,
-        use_rel_pos,
-        window_size,
-        input_size,
+        use_bias=True,
+        use_rel_pos=False,
+        window_size=0,
+        input_size=None,
         activation=keras.activations.gelu,
         layer_norm_epsilon=1e-6,
         **kwargs
@@ -187,19 +181,13 @@ class WindowedTransformerEncoder(layers.Layer):
 
         self.layer_norm1 = layers.LayerNormalization(epsilon=self.layer_norm_epsilon)
         self.layer_norm2 = layers.LayerNormalization(epsilon=self.layer_norm_epsilon)
-        if use_rel_pos:
-            self.attention = MultiHeadAttentionWithRelativePE(
-                num_heads=self.num_heads,
-                key_dim=self.project_dim // self.num_heads,
-                use_bias=use_bias,
-                input_size=input_size,
-            )
-        else:
-            self.attention = layers.MultiHeadAttention(
-                num_heads=self.num_heads,
-                key_dim=self.project_dim // self.num_heads,
-                use_bias=use_bias,
-            )
+        self.attention = MultiHeadAttentionWithRelativePE(
+            num_heads=self.num_heads,
+            key_dim=self.project_dim // self.num_heads,
+            use_bias=use_bias,
+            use_rel_pos=use_rel_pos,
+            input_size=input_size if window_size == 0 else (window_size, window_size),
+        )
         self.dense1 = layers.Dense(self.mlp_units[0])
         self.activation1 = activation
         self.dense2 = layers.Dense(self.mlp_units[1])
@@ -207,26 +195,39 @@ class WindowedTransformerEncoder(layers.Layer):
     def call(self, x):
         shortcut = x
         x = self.layer_norm1(x)
-
+        # Window Partition
         if self.window_size > 0:
             H, W = x.shape[1], x.shape[2]
-            # Window Partition
+
             x, HW_padded = window_partition(x, self.window_size)
-            if self.use_rel_pos:
-                x = self.attention(x)
-            else:
-                x = self.attention(x, x)
-            # Reverse Window Partition
+
+        x = self.attention(x)
+        # Reverse Window Partition
+        if self.window_size > 0:
             x = window_unpartition(x, self.window_size, HW_padded, (H, W))
-        else:
-            if self.use_rel_pos:
-                x = self.attention(x)
-            else:
-                x = self.attention(x, x)
 
         x = shortcut + x
         x = x + self.dense2(self.activation1(self.dense1(self.layer_norm2(x))))
 
+        return x
+    
+    
+class PatchingAndEmbedding(layers.Layer):
+    def __init__(
+        self,
+        kernel_size=(16, 16),
+        strides=(16, 16),
+        embed_dim=768,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        
+        self.projection = layers.Conv2D(
+            embed_dim, kernel_size=kernel_size, strides=strides
+        )
+
+    def call(self, x):
+        x = self.projection(x)
         return x
 
 
@@ -243,6 +244,7 @@ class ImageEncoder(models.Model):
         num_heads=16,
         out_chans=256,
         use_bias=True,
+        use_abs_pos=True,
         use_rel_pos=False,
         window_size=0,
         global_attention_indices=[7, 15, 23, 31],
@@ -260,13 +262,24 @@ class ImageEncoder(models.Model):
         self.out_chans = out_chans
         self.use_bias = use_bias
         self.use_rel_pos = use_rel_pos
+        self.use_abs_pos = use_abs_pos
         self.window_size = window_size
         self.global_attention_indices = global_attention_indices
         self.layer_norm_epsilon = layer_norm_epsilon
 
-        self.patch_embed = keras_cv.layers.PatchingAndEmbedding(
-            project_dim=embed_dim, patch_size=patch_size
+        self.patch_embed = PatchingAndEmbedding(
+            kernel_size=(patch_size, patch_size),
+            strides=(patch_size, patch_size),
+            embed_dim=embed_dim,
         )
+        self.pos_embed = None
+        if self.use_abs_pos:
+            self.pos_embed = self.add_weight(
+                name="pos_embed",
+                shape=(1, self.img_size // self.patch_size, self.img_size // self.patch_size, self.embed_dim),
+                initializer="zeros",
+                trainable=True,
+            )
         self.transformer_blocks = []
         for i in range(depth):
             block = WindowedTransformerEncoder(
@@ -275,7 +288,7 @@ class ImageEncoder(models.Model):
                 num_heads=num_heads,
                 use_bias=use_bias,
                 use_rel_pos=use_rel_pos,
-                window_size=window_size if i in global_attention_indices else 0,
+                window_size=window_size if i not in global_attention_indices else 0,
                 input_size=(img_size // patch_size, img_size // patch_size),
             )
             self.transformer_blocks.append(block)
@@ -294,15 +307,7 @@ class ImageEncoder(models.Model):
     def call(self, x):
         B, _, _, _ = x.shape
         x = self.patch_embed(x)
-        # remove the class token and reshape to an image for downscaling
-        x = tf.reshape(
-            x[:, 1:, :],
-            shape=(
-                B,
-                self.img_size // self.patch_size,
-                self.img_size // self.patch_size,
-                self.embed_dim,
-            ),
-        )
+        if self.pos_embed is not None:
+            x = x + self.pos_embed
         x = self.transformer_blocks(x)
         return self.bottleneck(x)

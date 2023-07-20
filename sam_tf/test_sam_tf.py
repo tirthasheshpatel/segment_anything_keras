@@ -60,7 +60,9 @@ def test_image_encoder():
     image_encoder = get_image_encoder()
     x = tf.ones((1, 1024, 1024, 3))
     x_out = image_encoder(x)
+    num_parameters = sum(np.prod(x.shape) for x in image_encoder.trainable_variables)
     assert x_out.shape == (1, 64, 64, 256)
+    assert num_parameters == 637_026_048
 
 
 def get_points_labels_box_mask(B):
@@ -183,4 +185,4 @@ def test_mask_decoder():
     num_parameters = sum(np.prod(x.shape) for x in mask_decoder.trainable_variables)
     assert masks.shape == (1, 3, 256, 256)
     assert iou_pred.shape == (1, 3)
-    assert num_parameters == 4058340
+    assert num_parameters == 4_058_340

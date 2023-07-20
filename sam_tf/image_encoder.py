@@ -1,7 +1,9 @@
 import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras import models
+import keras
+from keras import layers
+from keras import models
+
+from sam_tf.common import LayerNormalization, MLPBlock
 
 
 def get_rel_pos(query_size, key_size, rel_pos):
@@ -199,9 +201,7 @@ class WindowedTransformerEncoder(layers.Layer):
             use_rel_pos=use_rel_pos,
             input_size=input_size if window_size == 0 else (window_size, window_size),
         )
-        self.dense1 = layers.Dense(self.mlp_units[0])
-        self.activation1 = activation
-        self.dense2 = layers.Dense(self.mlp_units[1])
+        self.mlp_block = MLPBlock(project_dim, mlp_dim, activation)
 
     def call(self, x):
         shortcut = x
@@ -218,7 +218,7 @@ class WindowedTransformerEncoder(layers.Layer):
             x = window_unpartition(x, self.window_size, HW_padded, (H, W))
 
         x = shortcut + x
-        x = x + self.dense2(self.activation1(self.dense1(self.layer_norm2(x))))
+        x = x + self.mlp_block(self.layer_norm2(x))
 
         return x
 
@@ -306,11 +306,11 @@ class ImageEncoder(models.Model):
         self.bottleneck = models.Sequential(
             [
                 layers.Conv2D(filters=out_chans, kernel_size=1, use_bias=False),
-                layers.LayerNormalization(epsilon=layer_norm_epsilon),
+                LayerNormalization(epsilon=layer_norm_epsilon),
                 layers.Conv2D(
                     filters=out_chans, kernel_size=3, padding="same", use_bias=False
                 ),
-                layers.LayerNormalization(epsilon=layer_norm_epsilon),
+                LayerNormalization(epsilon=layer_norm_epsilon),
             ]
         )
 

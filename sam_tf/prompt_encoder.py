@@ -1,9 +1,10 @@
 import math
 
 import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras import models
+import keras
+from keras import layers
+from keras import models
+from sam_tf.common import LayerNormalization
 
 
 class RandomFrequencyPositionalEmbeddings(layers.Layer):
@@ -74,10 +75,10 @@ class PromptEncoder(models.Model):
         self.mask_downscaler = models.Sequential(
             [
                 layers.Conv2D(mask_in_chans // 4, kernel_size=2, strides=2),
-                layers.LayerNormalization(),
+                LayerNormalization(),
                 layers.Activation(activation),
                 layers.Conv2D(mask_in_chans, kernel_size=2, strides=2),
-                layers.LayerNormalization(),
+                LayerNormalization(),
                 layers.Activation(activation),
                 layers.Conv2D(embed_dim, kernel_size=1),
             ]

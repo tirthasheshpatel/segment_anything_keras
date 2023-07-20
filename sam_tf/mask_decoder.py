@@ -1,7 +1,9 @@
 import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras import models
+import keras
+from keras import layers
+from keras import models
+
+from sam_tf.common import LayerNormalization, MLPBlock
 
 
 class AttentionWithDownsampling(layers.Layer):
@@ -84,14 +86,9 @@ class TwoWayAttention(layers.Layer):
             downsample_rate=attention_downsample_rate,
         )
         self.layer_norm2 = layers.LayerNormalization()
+        
+        self.mlp_block = MLPBlock(key_dim * num_heads, mlp_dim, activation)
 
-        self.mlp_block = models.Sequential(
-            [
-                layers.Dense(mlp_dim),
-                layers.Activation(activation),
-                layers.Dense(key_dim * num_heads),
-            ]
-        )
         self.layer_norm3 = layers.LayerNormalization()
         self.cross_attention_image_to_token = AttentionWithDownsampling(
             num_heads=num_heads,
@@ -194,7 +191,7 @@ class TwoWayTransformer(layers.Layer):
         return queries, keys
 
 
-class MLPBlock(models.Model):
+class MLP(models.Model):
     def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
         super().__init__()
         self.num_layers = num_layers
@@ -234,7 +231,7 @@ class MaskDecoder(models.Model):
         self.output_upscaling = models.Sequential(
             [
                 layers.Conv2DTranspose(transformer_dim // 4, kernel_size=2, strides=2),
-                layers.LayerNormalization(),
+                LayerNormalization(),
                 layers.Activation(activation),
                 layers.Conv2DTranspose(transformer_dim // 8, kernel_size=2, strides=2),
                 layers.Activation(activation),
@@ -242,11 +239,11 @@ class MaskDecoder(models.Model):
         )
 
         self.output_hypernetworks_mlps = [
-            MLPBlock(transformer_dim, transformer_dim, transformer_dim // 8, 3)
+            MLP(transformer_dim, transformer_dim, transformer_dim // 8, 3)
             for _ in range(self.num_mask_tokens)
         ]
 
-        self.iou_prediction_head = MLPBlock(
+        self.iou_prediction_head = MLP(
             transformer_dim, iou_head_hidden_dim, self.num_mask_tokens, iou_head_depth
         )
 

@@ -140,7 +140,7 @@ class PromptEncoder(models.Model):
         bottom_right_embedding = (
             corner_embedding[:, 1, :] + self.bottom_right_corner_embed.weights[0]
         )
-        corner_embedding = corner_embedding + tf.stack(
+        corner_embedding = tf.stack(
             [top_left_embedding, bottom_right_embedding], axis=1
         )
         return corner_embedding

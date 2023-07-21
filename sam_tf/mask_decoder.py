@@ -79,23 +79,23 @@ class TwoWayAttention(layers.Layer):
         self.self_attention = AttentionWithDownsampling(
             num_heads=num_heads, key_dim=key_dim
         )
-        self.layer_norm1 = layers.LayerNormalization()
+        self.layer_norm1 = layers.LayerNormalization(epsilon=1e-5)
         self.cross_attention_token_to_image = AttentionWithDownsampling(
             num_heads=num_heads,
             key_dim=key_dim,
             downsample_rate=attention_downsample_rate,
         )
-        self.layer_norm2 = layers.LayerNormalization()
+        self.layer_norm2 = layers.LayerNormalization(epsilon=1e-5)
         
         self.mlp_block = MLPBlock(key_dim * num_heads, mlp_dim, activation)
 
-        self.layer_norm3 = layers.LayerNormalization()
+        self.layer_norm3 = layers.LayerNormalization(epsilon=1e-5)
         self.cross_attention_image_to_token = AttentionWithDownsampling(
             num_heads=num_heads,
             key_dim=key_dim,
             downsample_rate=attention_downsample_rate,
         )
-        self.layer_norm4 = layers.LayerNormalization()
+        self.layer_norm4 = layers.LayerNormalization(epsilon=1e-5)
 
     def call(self, queries, keys, query_pe, key_pe):
         if self.skip_first_layer_pe:
@@ -165,7 +165,7 @@ class TwoWayTransformer(layers.Layer):
             key_dim=embedding_dim // num_heads,
             downsample_rate=attention_downsample_rate,
         )
-        self.final_layer_norm = layers.LayerNormalization()
+        self.final_layer_norm = layers.LayerNormalization(epsilon=1e-5)
 
     def call(self, image_embedding, image_pe, point_embedding):
         B, H, W, C = image_embedding.shape
@@ -192,7 +192,7 @@ class TwoWayTransformer(layers.Layer):
 
 
 class MLP(models.Model):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
+    def __init__(self, hidden_dim, output_dim, num_layers):
         super().__init__()
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)
@@ -239,12 +239,12 @@ class MaskDecoder(models.Model):
         )
 
         self.output_hypernetworks_mlps = [
-            MLP(transformer_dim, transformer_dim, transformer_dim // 8, 3)
+            MLP(transformer_dim, transformer_dim // 8, 3)
             for _ in range(self.num_mask_tokens)
         ]
 
         self.iou_prediction_head = MLP(
-            transformer_dim, iou_head_hidden_dim, self.num_mask_tokens, iou_head_depth
+            iou_head_hidden_dim, self.num_mask_tokens, iou_head_depth
         )
 
         # Don't like this; maybe we can just use raw learnable weight matrices.
@@ -294,7 +294,7 @@ class MaskDecoder(models.Model):
         source = tf.broadcast_to(
             image_embeddings,
             shape=(
-                sparse_prompt_embeddings.shape[0],
+                tokens.shape[0],
                 image_embeddings.shape[1],
                 image_embeddings.shape[2],
                 image_embeddings.shape[3],
@@ -302,7 +302,15 @@ class MaskDecoder(models.Model):
         )
         source = source + dense_prompt_embeddings
         # TODO: is this the same as torch.repeat_interleave?
-        positional_source = tf.broadcast_to(image_pe, shape=image_embeddings.shape)
+        positional_source = tf.broadcast_to(
+            image_pe,
+            shape=(
+                tokens.shape[0],
+                image_embeddings.shape[1],
+                image_embeddings.shape[2],
+                image_embeddings.shape[3],
+            )
+        )
         B, H, W, C = source.shape
 
         hidden_state, source = self.transformer(source, positional_source, tokens)

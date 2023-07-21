@@ -290,7 +290,6 @@ class MaskDecoder(models.Model):
         )
         tokens = tf.concat([output_tokens, sparse_prompt_embeddings], axis=1)
 
-        # TODO: is this the same as torch.repeat_interleave?
         source = tf.broadcast_to(
             image_embeddings,
             shape=(
@@ -301,7 +300,6 @@ class MaskDecoder(models.Model):
             ),
         )
         source = source + dense_prompt_embeddings
-        # TODO: is this the same as torch.repeat_interleave?
         positional_source = tf.broadcast_to(
             image_pe,
             shape=(
@@ -332,7 +330,6 @@ class MaskDecoder(models.Model):
         masks = tf.reshape(
             hyper_in @ upscaled_embeddings, shape=(B, self.num_mask_tokens, H, W)
         )
-        # masks = tf.transpose(masks, perm=(0, 2, 3, 1))
 
         iou_pred = self.iou_prediction_head(iou_token_out)
 

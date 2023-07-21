@@ -46,7 +46,7 @@ class SegmentAnythingModel(models.Model):
                 image_pe=self.prompt_encoder.get_dense_pe(),
                 sparse_prompt_embeddings=sparse_embeddings,
                 dense_prompt_embeddings=dense_embeddings,
-                multimask_output=False,
+                multimask_output=True,
             )
             masks = self.postprocess_masks(
                 low_res_masks,

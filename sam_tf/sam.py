@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras import models
+from keras import models
 
 
 class SegmentAnythingModel(models.Model):

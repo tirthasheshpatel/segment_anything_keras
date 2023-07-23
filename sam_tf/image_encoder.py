@@ -70,7 +70,7 @@ class MultiHeadAttentionWithRelativePE(layers.Layer):
         super().__init__(**kwargs)
         self.num_heads = num_heads
         self.key_dim = key_dim
-        self.scale = self.key_dim**0.5
+        self.scale = self.key_dim**-0.5
 
         self.qkv = layers.Dense(key_dim * self.num_heads * 3, use_bias=use_bias)
         self.projection = layers.Dense(key_dim * self.num_heads)

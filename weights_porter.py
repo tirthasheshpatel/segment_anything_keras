@@ -179,7 +179,7 @@ def port_weights_huge(mb_model, torch_model):
             for x in torch_model.image_encoder.patch_embed.parameters()
         ]
     )
-    mb_model.image_encoder.pos_embed = mb_model.image_encoder.pos_embed.assign(
+    mb_model.image_encoder.pos_embed.assign(
         torch_model.image_encoder.pos_embed.cpu().detach().numpy()
     )
     for i in range(32):

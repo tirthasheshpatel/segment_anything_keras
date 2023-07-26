@@ -37,7 +37,7 @@ class SegmentAnythingModel(keras.models.Model):
         elif keras.backend.backend() == "jax":
             import jax
             image_encodings = [
-                jax.lax.index_in_dim(x, i, 0, keepdims=False)
+                jax.lax.index_in_dim(image_encodings, i, 0, keepdims=False)
                 for i in range(image_encodings.shape[0])
             ]
             del jax

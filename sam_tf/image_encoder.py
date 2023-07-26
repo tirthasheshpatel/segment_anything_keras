@@ -288,7 +288,6 @@ class ImageEncoder(keras.models.Model):
             strides=(patch_size, patch_size),
             embed_dim=embed_dim,
         )
-        self.pos_embed = None
         if self.use_abs_pos:
             self.pos_embed = self.add_weight(
                 name="pos_embed",
@@ -301,6 +300,8 @@ class ImageEncoder(keras.models.Model):
                 initializer="zeros",
                 trainable=True,
             )
+        else:
+            self.pos_embed = None
         self.transformer_blocks = []
         for i in range(depth):
             block = WindowedTransformerEncoder(

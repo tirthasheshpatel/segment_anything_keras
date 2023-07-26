@@ -1,8 +1,8 @@
-import tensorflow as tf
-from keras import models
+from keras_cv.backend import keras
+from keras_cv.backend import ops
 
 
-class SegmentAnythingModel(models.Model):
+class SegmentAnythingModel(keras.models.Model):
     mask_threshold = 0.0
     image_format = "RGB"
 
@@ -19,14 +19,28 @@ class SegmentAnythingModel(models.Model):
         self.image_encoder = image_encoder
         self.prompt_encoder = prompt_encoder
         self.mask_decoder = mask_decoder
-        self.pixel_mean = tf.constant(pixel_mean, dtype=self.dtype)
-        self.pixel_std = tf.constant(pixel_std, dtype=self.dtype)
+        self.pixel_mean = ops.array(pixel_mean, dtype=self.dtype)
+        self.pixel_std = ops.array(pixel_std, dtype=self.dtype)
 
     def call(self, batched_input, multimask_output=True):
-        images = tf.concat(
+        images = ops.concatenate(
             [self.preprocess_images(x["image"]) for x in batched_input], axis=0
         )
-        image_encodings = tf.unstack(self.image_encoder(images), axis=0)
+        # TODO: remove this atrocity once unstack is added in keras core
+        image_encodings = self.image_encoder(images)
+        if keras.backend.backend() == "tensorflow":
+            import tensorflow as tf
+            image_encodings = tf.unstack(image_encodings, axis=0)
+            del tf
+        elif keras.backend.backend() == "torch":
+            image_encodings = image_encodings.unbind(0)
+        elif keras.backend.backend() == "jax":
+            import jax
+            image_encodings = [
+                jax.lax.index_in_dim(image_encodings, i, 0, keepdims=False)
+                for i in range(image_encodings.shape[0])
+            ]
+            del jax
 
         outputs = []
         for image_record, image_encoded in zip(batched_input, image_encodings):
@@ -42,7 +56,7 @@ class SegmentAnythingModel(models.Model):
                 mask=image_record.get("mask_inputs", None),
             )
             low_res_masks, iou_scores = self.mask_decoder(
-                image_embeddings=image_encoded[tf.newaxis, ...],
+                image_embeddings=image_encoded[None, ...],
                 image_pe=self.prompt_encoder.get_dense_pe(),
                 sparse_prompt_embeddings=sparse_embeddings,
                 dense_prompt_embeddings=dense_embeddings,
@@ -64,14 +78,14 @@ class SegmentAnythingModel(models.Model):
         return outputs
 
     def postprocess_masks(self, masks, input_size, original_size):
-        masks = tf.image.resize(
-            tf.transpose(masks, perm=(0, 2, 3, 1)),
+        masks = ops.image.resize(
+            ops.transpose(masks, axes=(0, 2, 3, 1)),
             size=(self.image_encoder.img_size, self.image_encoder.img_size),
             method="bilinear",
         )
         masks = masks[..., : input_size[0], : input_size[1], :]
-        masks = tf.image.resize(masks, size=original_size, method="bilinear")
-        return tf.transpose(masks, perm=(0, 3, 1, 2))
+        masks = ops.image.resize(masks, size=original_size, method="bilinear")
+        return ops.transpose(masks, axes=(0, 3, 1, 2))
 
     def preprocess_images(self, x):
         x = (x - self.pixel_mean) / self.pixel_std
@@ -79,5 +93,5 @@ class SegmentAnythingModel(models.Model):
         h, w = x.shape[1:3]
         pad_h = self.image_encoder.img_size - h
         pad_w = self.image_encoder.img_size - w
-        x = tf.pad(x, [(0, 0), (0, pad_h), (0, pad_w), (0, 0)])
+        x = ops.pad(x, [(0, 0), (0, pad_h), (0, pad_w), (0, 0)])
         return x

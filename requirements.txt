@@ -1,6 +1,11 @@
 Pillow
 numpy
 tensorflow
-keras
+torch
+torchvision
+torchaudio
+jaxlib
+jax
+keras-core
 keras-cv
 pycocotools

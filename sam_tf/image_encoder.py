@@ -1,7 +1,5 @@
-import tensorflow as tf
-import keras
-from keras import layers
-from keras import models
+from keras_cv.backend import keras
+from keras_cv.backend import ops
 
 from sam_tf.common import LayerNormalization, MLPBlock
 
@@ -9,27 +7,27 @@ from sam_tf.common import LayerNormalization, MLPBlock
 def get_rel_pos(query_size, key_size, rel_pos):
     max_rel_dist = 2 * max(query_size, key_size) - 1
     if rel_pos.shape[0] != max_rel_dist:
-        rel_pos_resized = tf.image.resize(
-            images=tf.reshape(
-                rel_pos, shape=(1, rel_pos.shape[0], rel_pos.shape[1], 1)
+        rel_pos_resized = ops.image.resize(
+            images=ops.reshape(
+                rel_pos, (1, rel_pos.shape[0], rel_pos.shape[1], 1)
             ),
             size=(max_rel_dist, rel_pos.shape[1]),
             method="bilinear",
         )
-        rel_pos_resized = tf.squeeze(rel_pos_resized, axis=(0, -1))
+        rel_pos_resized = ops.squeeze(rel_pos_resized, axis=(0, -1))
     else:
         rel_pos_resized = rel_pos
-    query_coordinates = tf.range(query_size, dtype=tf.float32)[:, tf.newaxis] * max(
+    query_coordinates = ops.arange(query_size, dtype="float32")[:, None] * max(
         key_size / query_size, 1.0
     )
-    key_coordinates = tf.range(key_size, dtype=tf.float32)[tf.newaxis, :] * max(
+    key_coordinates = ops.arange(key_size, dtype="float32")[None, :] * max(
         query_size / key_size, 1.0
     )
     relative_coordinates = (query_coordinates - key_coordinates) + (key_size - 1) * max(
         query_size / key_size, 1.0
     )
-    relative_coordinates = tf.cast(relative_coordinates, dtype=tf.int64)
-    return tf.gather(rel_pos_resized, relative_coordinates)
+    relative_coordinates = ops.cast(relative_coordinates, dtype="int64")
+    return ops.take(rel_pos_resized, relative_coordinates, 0)
 
 
 def add_decomposed_rel_pos(
@@ -41,22 +39,22 @@ def add_decomposed_rel_pos(
     rel_widths = get_rel_pos(query_width, key_width, rel_pos_w)
 
     B, _, C = queries.shape
-    rel_queries = tf.reshape(queries, shape=(B, query_height, query_width, C))
-    rel_heights = tf.einsum("bhwc,hkc->bhwk", rel_queries, rel_heights)
-    rel_widths = tf.einsum("bhwc,wkc->bhwk", rel_queries, rel_widths)
+    rel_queries = ops.reshape(queries, (B, query_height, query_width, C))
+    rel_heights = ops.einsum("bhwc,hkc->bhwk", rel_queries, rel_heights)
+    rel_widths = ops.einsum("bhwc,wkc->bhwk", rel_queries, rel_widths)
 
-    attention_map = tf.reshape(
-        attention_map, shape=(B, query_height, query_width, key_height, key_width)
+    attention_map = ops.reshape(
+        attention_map, (B, query_height, query_width, key_height, key_width)
     )
-    attention_map = attention_map + rel_heights[..., :, tf.newaxis]
-    attention_map = attention_map + rel_widths[..., tf.newaxis, :]
-    attention_map = tf.reshape(
-        attention_map, shape=(B, query_height * query_width, key_height * key_width)
+    attention_map = attention_map + rel_heights[..., :, None]
+    attention_map = attention_map + rel_widths[..., None, :]
+    attention_map = ops.reshape(
+        attention_map, (B, query_height * query_width, key_height * key_width)
     )
     return attention_map
 
 
-class MultiHeadAttentionWithRelativePE(layers.Layer):
+class MultiHeadAttentionWithRelativePE(keras.layers.Layer):
     def __init__(
         self,
         *,
@@ -72,8 +70,8 @@ class MultiHeadAttentionWithRelativePE(layers.Layer):
         self.key_dim = key_dim
         self.scale = self.key_dim**-0.5
 
-        self.qkv = layers.Dense(key_dim * self.num_heads * 3, use_bias=use_bias)
-        self.projection = layers.Dense(key_dim * self.num_heads)
+        self.qkv = keras.layers.Dense(key_dim * self.num_heads * 3, use_bias=use_bias)
+        self.projection = keras.layers.Dense(key_dim * self.num_heads)
 
         self.input_size = input_size
         self.use_rel_pos = use_rel_pos
@@ -97,24 +95,37 @@ class MultiHeadAttentionWithRelativePE(layers.Layer):
 
     def call(self, x):
         B, H, W, C = x.shape
-        qkv = tf.transpose(
-            tf.reshape(self.qkv(x), shape=(B, H * W, 3, self.num_heads, self.key_dim)),
-            perm=(2, 0, 3, 1, 4),
+        qkv = ops.transpose(
+            ops.reshape(self.qkv(x), (B, H * W, 3, self.num_heads, self.key_dim)),
+            axes=(2, 0, 3, 1, 4),
         )
-        qkv = tf.reshape(qkv, (3, B * self.num_heads, H * W, self.key_dim))
-        queries, keys, values = tf.unstack(qkv, axis=0)
-        attention_map = (queries * self.scale) @ tf.transpose(keys, perm=(0, 2, 1))
+        qkv = ops.reshape(qkv, (3, B * self.num_heads, H * W, self.key_dim))
+        # TODO: remove this once unstack is added in keras core
+        if keras.backend.backend() == "tensorflow":
+            import tensorflow as tf
+            queries, keys, values = tf.unstack(qkv, axis=0)
+            del tf
+        elif keras.backend.backend() == "torch":
+            queries, keys, values = qkv.unbind(0)
+        elif keras.backend.backend() == "jax":
+            import jax
+            queries, keys, values = [
+                jax.lax.index_in_dim(qkv, i, 0, keepdims=False)
+                for i in range(qkv.shape[0])
+            ]
+            del jax
+        attention_map = (queries * self.scale) @ ops.transpose(keys, axes=(0, 2, 1))
 
         if self.use_rel_pos:
             attention_map = add_decomposed_rel_pos(
                 attention_map, queries, self.rel_pos_h, self.rel_pos_w, (H, W), (H, W)
             )
-        attention_map = tf.math.softmax(attention_map, axis=-1)
-        x = tf.reshape(
-            attention_map @ values, shape=(B, self.num_heads, H, W, self.key_dim)
+        attention_map = ops.softmax(attention_map, axis=-1)
+        x = ops.reshape(
+            attention_map @ values, (B, self.num_heads, H, W, self.key_dim)
         )
-        x = tf.transpose(x, perm=(0, 2, 3, 1, 4))
-        x = tf.reshape(x, shape=(B, H, W, C))
+        x = ops.transpose(x, axes=(0, 2, 3, 1, 4))
+        x = ops.reshape(x, (B, H, W, C))
         x = self.projection(x)
 
         return x
@@ -125,11 +136,11 @@ def window_partition(x, window_size):
     pad_height = (window_size - H % window_size) % window_size
     pad_width = (window_size - W % window_size) % window_size
     if pad_height > 0 or pad_width > 0:
-        x = tf.pad(x, ((0, 0), (0, pad_height), (0, pad_width), (0, 0)))
+        x = ops.pad(x, ((0, 0), (0, pad_height), (0, pad_width), (0, 0)))
     H_padded, W_padded = H + pad_height, W + pad_width
-    x = tf.reshape(
+    x = ops.reshape(
         x,
-        shape=(
+        (
             B,
             H_padded // window_size,
             window_size,
@@ -138,9 +149,9 @@ def window_partition(x, window_size):
             C,
         ),
     )
-    windows = tf.reshape(
-        tf.transpose(x, perm=(0, 1, 3, 2, 4, 5)),
-        shape=(-1, window_size, window_size, C),
+    windows = ops.reshape(
+        ops.transpose(x, axes=(0, 1, 3, 2, 4, 5)),
+        (-1, window_size, window_size, C),
     )
     return windows, (H_padded, W_padded)
 
@@ -149,9 +160,9 @@ def window_unpartition(windows, window_size, HW_padded, HW):
     H_padded, W_padded = HW_padded
     H, W = HW
     B = windows.shape[0] // ((H_padded // window_size) * (W_padded // window_size))
-    x = tf.reshape(
+    x = ops.reshape(
         windows,
-        shape=(
+        (
             B,
             H_padded // window_size,
             W_padded // window_size,
@@ -160,13 +171,13 @@ def window_unpartition(windows, window_size, HW_padded, HW):
             -1,
         ),
     )
-    x = tf.reshape(
-        tf.transpose(x, perm=(0, 1, 3, 2, 4, 5)), shape=(B, H_padded, W_padded, -1)
+    x = ops.reshape(
+        ops.transpose(x, axes=(0, 1, 3, 2, 4, 5)), (B, H_padded, W_padded, -1)
     )
     return x[:, :H, :W, :]
 
 
-class WindowedTransformerEncoder(layers.Layer):
+class WindowedTransformerEncoder(keras.layers.Layer):
     """Transformer blocks with support of window attention and residual propagation blocks"""
 
     def __init__(
@@ -192,8 +203,8 @@ class WindowedTransformerEncoder(layers.Layer):
         self.window_size = window_size
         self.use_rel_pos = use_rel_pos
 
-        self.layer_norm1 = layers.LayerNormalization(epsilon=self.layer_norm_epsilon)
-        self.layer_norm2 = layers.LayerNormalization(epsilon=self.layer_norm_epsilon)
+        self.layer_norm1 = keras.layers.LayerNormalization(epsilon=self.layer_norm_epsilon)
+        self.layer_norm2 = keras.layers.LayerNormalization(epsilon=self.layer_norm_epsilon)
         self.attention = MultiHeadAttentionWithRelativePE(
             num_heads=self.num_heads,
             key_dim=self.project_dim // self.num_heads,
@@ -223,11 +234,11 @@ class WindowedTransformerEncoder(layers.Layer):
         return x
 
 
-class PatchingAndEmbedding(layers.Layer):
+class PatchingAndEmbedding(keras.layers.Layer):
     def __init__(self, kernel_size=(16, 16), strides=(16, 16), embed_dim=768, **kwargs):
         super().__init__(**kwargs)
 
-        self.projection = layers.Conv2D(
+        self.projection = keras.layers.Conv2D(
             embed_dim, kernel_size=kernel_size, strides=strides
         )
 
@@ -236,7 +247,7 @@ class PatchingAndEmbedding(layers.Layer):
         return x
 
 
-class ImageEncoder(models.Model):
+class ImageEncoder(keras.models.Model):
     def __init__(
         self,
         *,
@@ -277,7 +288,6 @@ class ImageEncoder(models.Model):
             strides=(patch_size, patch_size),
             embed_dim=embed_dim,
         )
-        self.pos_embed = None
         if self.use_abs_pos:
             self.pos_embed = self.add_weight(
                 name="pos_embed",
@@ -290,6 +300,8 @@ class ImageEncoder(models.Model):
                 initializer="zeros",
                 trainable=True,
             )
+        else:
+            self.pos_embed = None
         self.transformer_blocks = []
         for i in range(depth):
             block = WindowedTransformerEncoder(
@@ -302,12 +314,12 @@ class ImageEncoder(models.Model):
                 input_size=(img_size // patch_size, img_size // patch_size),
             )
             self.transformer_blocks.append(block)
-        self.transformer_blocks = models.Sequential(self.transformer_blocks)
-        self.bottleneck = models.Sequential(
+        self.transformer_blocks = keras.models.Sequential(self.transformer_blocks)
+        self.bottleneck = keras.models.Sequential(
             [
-                layers.Conv2D(filters=out_chans, kernel_size=1, use_bias=False),
+                keras.layers.Conv2D(filters=out_chans, kernel_size=1, use_bias=False),
                 LayerNormalization(epsilon=layer_norm_epsilon),
-                layers.Conv2D(
+                keras.layers.Conv2D(
                     filters=out_chans, kernel_size=3, padding="same", use_bias=False
                 ),
                 LayerNormalization(epsilon=layer_norm_epsilon),

@@ -4,8 +4,9 @@ from keras_cv.backend import ops
 from sam_tf.common import LayerNormalization, MLPBlock
 
 
+@keras.utils.register_keras_serializable(package="keras_cv")
 class AttentionWithDownsampling(keras.layers.Layer):
-    def __init__(self, *, num_heads, key_dim, downsample_rate=1, **kwargs):
+    def __init__(self, num_heads, key_dim, downsample_rate=1, **kwargs):
         super().__init__(**kwargs)
         self.num_heads = num_heads
         self.key_dim = key_dim
@@ -19,8 +20,6 @@ class AttentionWithDownsampling(keras.layers.Layer):
 
         # Upsample
         self.out_proj = keras.layers.Dense(self.key_dim * self.num_heads)
-
-        # XXX: embedding_dim = key_dim * num_heads
 
     def __separate_heads(self, x):
         B, N, C = x.shape
@@ -52,12 +51,21 @@ class AttentionWithDownsampling(keras.layers.Layer):
         attention_map = out @ value
         attention_map = self.__recombine_heads(attention_map)
         return self.out_proj(attention_map)
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "num_heads": self.num_heads,
+            "key_dim": self.key_dim,
+            "downsample_rate": self.downsample_rate
+        })
+        return config
 
 
+@keras.utils.register_keras_serializable(package="keras_cv")
 class TwoWayAttention(keras.layers.Layer):
     def __init__(
         self,
-        *,
         num_heads,
         key_dim,
         mlp_dim,
@@ -127,12 +135,24 @@ class TwoWayAttention(keras.layers.Layer):
         keys = self.layer_norm4(keys)
 
         return queries, keys
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "num_heads": self.num_heads,
+            "key_dim": self.key_dim,
+            "mlp_dim": self.mlp_dim,
+            "skip_first_layer_pe": self.skip_first_layer_pe,
+            "attention_downsample_rate": self.attention_downsample_rate,
+            "activation": self.activation,
+        })
+        return config
 
 
+@keras.utils.register_keras_serializable(package="keras_cv")
 class TwoWayTransformer(keras.layers.Layer):
     def __init__(
         self,
-        *,
         depth,
         embedding_dim,
         num_heads,
@@ -146,6 +166,8 @@ class TwoWayTransformer(keras.layers.Layer):
         self.embedding_dim = embedding_dim
         self.num_heads = num_heads
         self.mlp_dim = mlp_dim
+        self.activation = activation
+        self.attention_downsample_rate = attention_downsample_rate
         self.layers = []
         for i in range(depth):
             self.layers.append(
@@ -187,11 +209,26 @@ class TwoWayTransformer(keras.layers.Layer):
         queries = self.final_layer_norm(queries)
 
         return queries, keys
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "depth": self.depth,
+            "embedding_dim": self.embedding_dim,
+            "num_heads": self.num_heads,
+            "mlp_dim": self.mlp_dim,
+            "activation": self.activation,
+            "attention_downsample_rate": self.attention_downsample_rate,
+        })
+        return config
 
 
-class MLP(keras.models.Model):
-    def __init__(self, hidden_dim, output_dim, num_layers):
-        super().__init__()
+@keras.utils.register_keras_serializable(package="keras_cv")
+class MLP(keras.layers.Layer):
+    def __init__(self, hidden_dim, output_dim, num_layers, **kwargs):
+        super().__init__(**kwargs)
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)
         self.dense_net = []
@@ -203,12 +240,21 @@ class MLP(keras.models.Model):
 
     def call(self, x):
         return self.dense_net(x)
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "hidden_dim": self.hidden_dim,
+            "output_dim": self.output_dim,
+            "num_layers": self.num_layers
+        })
+        return config
 
 
-class MaskDecoder(keras.models.Model):
+@keras.utils.register_keras_serializable(package="keras_cv")
+class MaskDecoder(keras.layers.Layer):
     def __init__(
         self,
-        *,
         transformer_dim,
         transformer,
         num_multimask_outputs,
@@ -221,6 +267,8 @@ class MaskDecoder(keras.models.Model):
         self.transformer_dim = transformer_dim
         self.transformer = transformer
         self.num_multimask_outputs = num_multimask_outputs
+        self.iou_head_depth = iou_head_depth
+        self.iou_head_hidden_dim = iou_head_hidden_dim
 
         self.iou_token = keras.layers.Embedding(1, transformer_dim)
         self.num_mask_tokens = num_multimask_outputs + 1
@@ -332,3 +380,26 @@ class MaskDecoder(keras.models.Model):
         iou_pred = self.iou_prediction_head(iou_token_out)
 
         return masks, iou_pred
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "transformer_dim": self.transformer_dim,
+            "transformer": keras.saving.serialize_keras_object(self.transformer),
+            "num_multimask_outputs": self.num_multimask_outputs,
+            "iou_head_depth": self.iou_head_depth,
+            "iou_head_hidden_dim": self.iou_head_hidden_dim,
+            "activation": self.activation,
+        })
+        return config
+    
+    @classmethod
+    def from_config(cls, config):
+        config.update(
+            {
+                "transformer": keras.initializers.deserialize(
+                    config["transformer"]
+                )
+            }
+        )
+        return super().from_config(config)

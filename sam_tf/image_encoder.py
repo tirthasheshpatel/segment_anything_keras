@@ -54,10 +54,10 @@ def add_decomposed_rel_pos(
     return attention_map
 
 
+@keras.saving.register_keras_serializable(package="keras_cv")
 class MultiHeadAttentionWithRelativePE(keras.layers.Layer):
     def __init__(
         self,
-        *,
         num_heads,
         key_dim,
         use_bias=True,
@@ -69,8 +69,9 @@ class MultiHeadAttentionWithRelativePE(keras.layers.Layer):
         self.num_heads = num_heads
         self.key_dim = key_dim
         self.scale = self.key_dim**-0.5
+        self.use_bias = use_bias
 
-        self.qkv = keras.layers.Dense(key_dim * self.num_heads * 3, use_bias=use_bias)
+        self.qkv = keras.layers.Dense(key_dim * self.num_heads * 3, use_bias=self.use_bias)
         self.projection = keras.layers.Dense(key_dim * self.num_heads)
 
         self.input_size = input_size
@@ -130,6 +131,17 @@ class MultiHeadAttentionWithRelativePE(keras.layers.Layer):
 
         return x
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "num_heads": self.num_heads,
+            "key_dim": self.key_dim,
+            "use_bias": self.use_bias,
+            "use_rel_pos": self.use_rel_pos,
+            "input_size": self.input_size,
+        })
+        return config
+
 
 def window_partition(x, window_size):
     B, H, W, C = x.shape
@@ -177,12 +189,12 @@ def window_unpartition(windows, window_size, HW_padded, HW):
     return x[:, :H, :W, :]
 
 
+@keras.utils.register_keras_serializable(package="keras_cv")
 class WindowedTransformerEncoder(keras.layers.Layer):
     """Transformer blocks with support of window attention and residual propagation blocks"""
 
     def __init__(
         self,
-        *,
         project_dim,
         mlp_dim,
         num_heads,
@@ -198,8 +210,10 @@ class WindowedTransformerEncoder(keras.layers.Layer):
         self.project_dim = project_dim
         self.mlp_dim = mlp_dim
         self.num_heads = num_heads
+        self.use_bias = use_bias
+        self.input_size = input_size
+        self.activation = activation
         self.layer_norm_epsilon = layer_norm_epsilon
-        self.mlp_units = [mlp_dim, project_dim]
         self.window_size = window_size
         self.use_rel_pos = use_rel_pos
 
@@ -232,8 +246,24 @@ class WindowedTransformerEncoder(keras.layers.Layer):
         x = x + self.mlp_block(self.layer_norm2(x))
 
         return x
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "project_dim": self.project_dim,
+            "mlp_dim": self.mlp_dim,
+            "num_heads": self.num_heads,
+            "use_bias": self.use_bias,
+            "use_rel_pos": self.use_rel_pos,
+            "window_size": self.window_size,
+            "input_size": self.input_size,
+            "activation": self.activation,
+            "layer_norm_epsilon": self.layer_norm_epsilon,
+        })
+        return config
 
 
+@keras.utils.register_keras_serializable(package="keras_cv")
 class PatchingAndEmbedding(keras.layers.Layer):
     def __init__(self, kernel_size=(16, 16), strides=(16, 16), embed_dim=768, **kwargs):
         super().__init__(**kwargs)
@@ -241,16 +271,29 @@ class PatchingAndEmbedding(keras.layers.Layer):
         self.projection = keras.layers.Conv2D(
             embed_dim, kernel_size=kernel_size, strides=strides
         )
+        
+        self.kernel_size = kernel_size
+        self.strides = strides
+        self.embed_dim = embed_dim
 
     def call(self, x):
         x = self.projection(x)
         return x
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "kernel_size": self.kernel_size,
+            "strides": self.strides,
+            "embed_dim": self.embed_dim
+        })
+        return config
 
 
-class ImageEncoder(keras.models.Model):
+@keras.utils.register_keras_serializable(package="keras_cv")
+class ImageEncoder(keras.layers.Layer):
     def __init__(
         self,
-        *,
         img_size=1024,
         patch_size=16,
         in_chans=3,
@@ -333,3 +376,23 @@ class ImageEncoder(keras.models.Model):
             x = x + self.pos_embed
         x = self.transformer_blocks(x)
         return self.bottleneck(x)
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "img_size": self.img_size,
+            "patch_size": self.patch_size,
+            "in_chans": self.in_chans,
+            "embed_dim": self.embed_dim,
+            "depth": self.depth,
+            "mlp_dim": self.mlp_dim,
+            "num_heads": self.num_heads,
+            "out_chans": self.out_chans,
+            "use_bias": self.use_bias,
+            "use_abs_pos": self.use_abs_pos,
+            "use_rel_pos": self.use_rel_pos,
+            "window_size": self.window_size,
+            "global_attention_indices": self.global_attention_indices,
+            "layer_norm_epsilon": self.layer_norm_epsilon,
+        })
+        return config

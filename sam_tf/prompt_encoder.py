@@ -5,8 +5,9 @@ from keras_cv.backend import ops
 from sam_tf.common import LayerNormalization
 
 
+@keras.saving.register_keras_serializable(package="keras_cv")
 class RandomFrequencyPositionalEmbeddings(keras.layers.Layer):
-    def __init__(self, *, num_positional_features, scale, **kwargs):
+    def __init__(self, num_positional_features, scale, **kwargs):
         super().__init__(**kwargs)
         self.num_positional_features = num_positional_features
         self.scale = scale
@@ -39,12 +40,20 @@ class RandomFrequencyPositionalEmbeddings(keras.layers.Layer):
             axis=-1,
         )
         return self.__positional_encodings(coords_normalized)
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "num_positional_features": self.num_positional_features,
+            "scale": self.scale
+        })
+        return config
 
 
-class PromptEncoder(keras.models.Model):
+@keras.saving.register_keras_serializable(package="keras_cv")
+class PromptEncoder(keras.layers.Layer):
     def __init__(
         self,
-        *,
         embed_dim,
         image_embedding_size,
         input_image_size,
@@ -54,10 +63,11 @@ class PromptEncoder(keras.models.Model):
     ):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
-        # convert the image_embedding_size to a tensor since keras core
-        # expects the input type to be a symbolic/concrete tensor.
         self.image_embedding_size = image_embedding_size
         self.input_image_size = input_image_size
+        self.mask_in_chans = mask_in_chans
+        self.activation = activation
+
         self.positional_embedding_layer = RandomFrequencyPositionalEmbeddings(
             num_positional_features=self.embed_dim // 2, scale=1
         )
@@ -101,6 +111,8 @@ class PromptEncoder(keras.models.Model):
             layer.build(None)
 
     def get_dense_pe(self):
+        # convert the image_embedding_size to a tensor since keras core
+        # expects the input type to be a symbolic/concrete tensor.
         return self.positional_embedding_layer(ops.convert_to_tensor(
             self.image_embedding_size, dtype="float32"
         ))[None, ...]
@@ -184,3 +196,14 @@ class PromptEncoder(keras.models.Model):
                 ),
             )
         return sparse_embeddings, dense_embeddings
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "embed_dim": self.embed_dim,
+            "image_embedding_size": self.image_embedding_size,
+            "input_image_size": self.input_image_size,
+            "mask_in_chans": self.mask_in_chans,
+            "activation": self.activation,
+        })
+        return config

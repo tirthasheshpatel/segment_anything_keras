@@ -1,20 +1,19 @@
-import tensorflow as tf
-import keras
-from keras import layers
+from keras_cv.backend import keras
+from keras_cv.backend import ops
 
 
-class MLPBlock(layers.Layer):
+class MLPBlock(keras.layers.Layer):
     def __init__(self, embedding_dim, mlp_dim, activation=keras.activations.gelu):
         super().__init__()
-        self.dense_layer1 = layers.Dense(mlp_dim)
-        self.dense_layer2 = layers.Dense(embedding_dim)
-        self.activation = layers.Activation(activation)
-        
+        self.dense_layer1 = keras.layers.Dense(mlp_dim)
+        self.dense_layer2 = keras.layers.Dense(embedding_dim)
+        self.activation = keras.layers.Activation(activation)
+
     def call(self, x):
         return self.dense_layer2(self.activation(self.dense_layer1(x)))
 
 
-class LayerNormalization(layers.Layer):
+class LayerNormalization(keras.layers.Layer):
     def __init__(self, epsilon=1e-6):
         super().__init__()
         self.epsilon = epsilon
@@ -34,8 +33,11 @@ class LayerNormalization(layers.Layer):
         )
 
     def call(self, x):
-        u = tf.reduce_mean(x, axis=-1, keepdims=True)
-        s = tf.reduce_mean(tf.square(x - u), axis=-1, keepdims=True)
-        x = (x - u) / tf.sqrt(s + self.epsilon)
+        u = ops.mean(x, axis=-1, keepdims=True)
+        s = ops.mean(ops.square(x - u), axis=-1, keepdims=True)
+        x = (x - u) / ops.sqrt(s + self.epsilon)
         x = self.weight * x + self.bias
         return x
+    
+    def compute_output_shape(self, input_shape):
+        return input_shape

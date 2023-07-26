@@ -1,12 +1,10 @@
-import tensorflow as tf
-import keras
-from keras import layers
-from keras import models
+from keras_cv.backend import keras
+from keras_cv.backend import ops
 
 from sam_tf.common import LayerNormalization, MLPBlock
 
 
-class AttentionWithDownsampling(layers.Layer):
+class AttentionWithDownsampling(keras.layers.Layer):
     def __init__(self, *, num_heads, key_dim, downsample_rate=1, **kwargs):
         super().__init__(**kwargs)
         self.num_heads = num_heads
@@ -15,24 +13,24 @@ class AttentionWithDownsampling(layers.Layer):
         self.internal_dims = key_dim // downsample_rate
 
         # Downsample
-        self.query_proj = layers.Dense(self.internal_dims * self.num_heads)
-        self.key_proj = layers.Dense(self.internal_dims * self.num_heads)
-        self.value_proj = layers.Dense(self.internal_dims * self.num_heads)
+        self.query_proj = keras.layers.Dense(self.internal_dims * self.num_heads)
+        self.key_proj = keras.layers.Dense(self.internal_dims * self.num_heads)
+        self.value_proj = keras.layers.Dense(self.internal_dims * self.num_heads)
 
         # Upsample
-        self.out_proj = layers.Dense(self.key_dim * self.num_heads)
+        self.out_proj = keras.layers.Dense(self.key_dim * self.num_heads)
 
         # XXX: embedding_dim = key_dim * num_heads
 
     def __separate_heads(self, x):
         B, N, C = x.shape
-        x = tf.reshape(x, (B, N, self.num_heads, C // self.num_heads))
-        return tf.transpose(x, perm=(0, 2, 1, 3))
+        x = ops.reshape(x, (B, N, self.num_heads, C // self.num_heads))
+        return ops.transpose(x, axes=(0, 2, 1, 3))
 
     def __recombine_heads(self, x):
         B, N_H, N_T, C_PH = x.shape
-        x = tf.transpose(x, perm=(0, 2, 1, 3))
-        return tf.reshape(x, (B, N_T, N_H * C_PH))
+        x = ops.transpose(x, axes=(0, 2, 1, 3))
+        return ops.reshape(x, (B, N_T, N_H * C_PH))
 
     def call(self, query, value, key):
         query = self.query_proj(query)
@@ -46,9 +44,9 @@ class AttentionWithDownsampling(layers.Layer):
 
         # Attention
         C_PH = query.shape[-1]
-        out = query @ tf.transpose(key, (0, 1, 3, 2))
-        out = out / tf.sqrt(tf.cast(C_PH, dtype=self.dtype))
-        out = tf.math.softmax(out, axis=-1)
+        out = query @ ops.transpose(key, (0, 1, 3, 2))
+        out = out / ops.sqrt(ops.cast(C_PH, dtype=self.dtype))
+        out = ops.softmax(out, axis=-1)
 
         # Get output
         attention_map = out @ value
@@ -56,7 +54,7 @@ class AttentionWithDownsampling(layers.Layer):
         return self.out_proj(attention_map)
 
 
-class TwoWayAttention(layers.Layer):
+class TwoWayAttention(keras.layers.Layer):
     def __init__(
         self,
         *,
@@ -79,23 +77,23 @@ class TwoWayAttention(layers.Layer):
         self.self_attention = AttentionWithDownsampling(
             num_heads=num_heads, key_dim=key_dim
         )
-        self.layer_norm1 = layers.LayerNormalization(epsilon=1e-5)
+        self.layer_norm1 = keras.layers.LayerNormalization(epsilon=1e-5)
         self.cross_attention_token_to_image = AttentionWithDownsampling(
             num_heads=num_heads,
             key_dim=key_dim,
             downsample_rate=attention_downsample_rate,
         )
-        self.layer_norm2 = layers.LayerNormalization(epsilon=1e-5)
+        self.layer_norm2 = keras.layers.LayerNormalization(epsilon=1e-5)
         
         self.mlp_block = MLPBlock(key_dim * num_heads, mlp_dim, activation)
 
-        self.layer_norm3 = layers.LayerNormalization(epsilon=1e-5)
+        self.layer_norm3 = keras.layers.LayerNormalization(epsilon=1e-5)
         self.cross_attention_image_to_token = AttentionWithDownsampling(
             num_heads=num_heads,
             key_dim=key_dim,
             downsample_rate=attention_downsample_rate,
         )
-        self.layer_norm4 = layers.LayerNormalization(epsilon=1e-5)
+        self.layer_norm4 = keras.layers.LayerNormalization(epsilon=1e-5)
 
     def call(self, queries, keys, query_pe, key_pe):
         if self.skip_first_layer_pe:
@@ -131,7 +129,7 @@ class TwoWayAttention(layers.Layer):
         return queries, keys
 
 
-class TwoWayTransformer(layers.Layer):
+class TwoWayTransformer(keras.layers.Layer):
     def __init__(
         self,
         *,
@@ -165,13 +163,13 @@ class TwoWayTransformer(layers.Layer):
             key_dim=embedding_dim // num_heads,
             downsample_rate=attention_downsample_rate,
         )
-        self.final_layer_norm = layers.LayerNormalization(epsilon=1e-5)
+        self.final_layer_norm = keras.layers.LayerNormalization(epsilon=1e-5)
 
     def call(self, image_embedding, image_pe, point_embedding):
         B, H, W, C = image_embedding.shape
-        image_embedding = tf.reshape(image_embedding, shape=(B, H * W, C))
+        image_embedding = ops.reshape(image_embedding, (B, H * W, C))
         B, H, W, C = image_pe.shape
-        image_pe = tf.reshape(image_pe, shape=(B, H * W, C))
+        image_pe = ops.reshape(image_pe, (B, H * W, C))
         queries = point_embedding
         keys = image_embedding
 
@@ -191,23 +189,23 @@ class TwoWayTransformer(layers.Layer):
         return queries, keys
 
 
-class MLP(models.Model):
+class MLP(keras.models.Model):
     def __init__(self, hidden_dim, output_dim, num_layers):
         super().__init__()
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)
         self.dense_net = []
         for hidden_dim in h:
-            self.dense_net.append(layers.Dense(hidden_dim))
-            self.dense_net.append(layers.Activation(keras.activations.relu))
-        self.dense_net.append(layers.Dense(output_dim))
-        self.dense_net = models.Sequential(self.dense_net)
+            self.dense_net.append(keras.layers.Dense(hidden_dim))
+            self.dense_net.append(keras.layers.Activation(keras.activations.relu))
+        self.dense_net.append(keras.layers.Dense(output_dim))
+        self.dense_net = keras.models.Sequential(self.dense_net)
 
     def call(self, x):
         return self.dense_net(x)
 
 
-class MaskDecoder(models.Model):
+class MaskDecoder(keras.models.Model):
     def __init__(
         self,
         *,
@@ -224,17 +222,17 @@ class MaskDecoder(models.Model):
         self.transformer = transformer
         self.num_multimask_outputs = num_multimask_outputs
 
-        self.iou_token = layers.Embedding(1, transformer_dim)
+        self.iou_token = keras.layers.Embedding(1, transformer_dim)
         self.num_mask_tokens = num_multimask_outputs + 1
-        self.mask_tokens = layers.Embedding(self.num_mask_tokens, transformer_dim)
+        self.mask_tokens = keras.layers.Embedding(self.num_mask_tokens, transformer_dim)
 
-        self.output_upscaling = models.Sequential(
+        self.output_upscaling = keras.models.Sequential(
             [
-                layers.Conv2DTranspose(transformer_dim // 4, kernel_size=2, strides=2),
+                keras.layers.Conv2DTranspose(transformer_dim // 4, kernel_size=2, strides=2),
                 LayerNormalization(),
-                layers.Activation(activation),
-                layers.Conv2DTranspose(transformer_dim // 8, kernel_size=2, strides=2),
-                layers.Activation(activation),
+                keras.layers.Activation(activation),
+                keras.layers.Conv2DTranspose(transformer_dim // 8, kernel_size=2, strides=2),
+                keras.layers.Activation(activation),
             ]
         )
 
@@ -277,20 +275,20 @@ class MaskDecoder(models.Model):
         sparse_prompt_embeddings,
         dense_prompt_embeddings,
     ):
-        output_tokens = tf.concat(
+        output_tokens = ops.concatenate(
             [self.iou_token.weights[0], self.mask_tokens.weights[0]], axis=0
         )
-        output_tokens = tf.broadcast_to(
-            output_tokens[tf.newaxis, ...],
+        output_tokens = ops.broadcast_to(
+            output_tokens[None, ...],
             shape=(
                 sparse_prompt_embeddings.shape[0],
                 output_tokens.shape[0],
                 output_tokens.shape[1],
             ),
         )
-        tokens = tf.concat([output_tokens, sparse_prompt_embeddings], axis=1)
+        tokens = ops.concatenate([output_tokens, sparse_prompt_embeddings], axis=1)
 
-        source = tf.broadcast_to(
+        source = ops.broadcast_to(
             image_embeddings,
             shape=(
                 tokens.shape[0],
@@ -300,7 +298,7 @@ class MaskDecoder(models.Model):
             ),
         )
         source = source + dense_prompt_embeddings
-        positional_source = tf.broadcast_to(
+        positional_source = ops.broadcast_to(
             image_pe,
             shape=(
                 tokens.shape[0],
@@ -315,20 +313,20 @@ class MaskDecoder(models.Model):
         iou_token_out = hidden_state[:, 0, :]
         mask_tokens_out = hidden_state[:, 1 : (1 + self.num_mask_tokens), :]
 
-        source = tf.reshape(source, shape=(B, H, W, C))
+        source = ops.reshape(source, (B, H, W, C))
         upscaled_embeddings = self.output_upscaling(source)
         hyper_in_list = []
         for i in range(self.num_mask_tokens):
             hyper_in_list.append(
                 self.output_hypernetworks_mlps[i](mask_tokens_out[:, i, :])
             )
-        hyper_in = tf.stack(hyper_in_list, axis=1)
+        hyper_in = ops.stack(hyper_in_list, axis=1)
         B, H, W, C = upscaled_embeddings.shape
-        upscaled_embeddings = tf.reshape(
-            tf.transpose(upscaled_embeddings, perm=(0, 3, 1, 2)), shape=(B, C, H * W)
+        upscaled_embeddings = ops.reshape(
+            ops.transpose(upscaled_embeddings, axes=(0, 3, 1, 2)), (B, C, H * W)
         )
-        masks = tf.reshape(
-            hyper_in @ upscaled_embeddings, shape=(B, self.num_mask_tokens, H, W)
+        masks = ops.reshape(
+            hyper_in @ upscaled_embeddings, (B, self.num_mask_tokens, H, W)
         )
 
         iou_pred = self.iou_prediction_head(iou_token_out)

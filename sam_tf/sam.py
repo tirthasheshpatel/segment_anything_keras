@@ -34,7 +34,6 @@ class SegmentAnythingModel(keras.models.Model):
             del tf
         elif keras.backend.backend() == "torch":
             image_encodings = image_encodings.unbind(0)
-            del torch
         elif keras.backend.backend() == "jax":
             import jax
             image_encodings = [

@@ -57,10 +57,10 @@ class PromptEncoder(keras.models.Model):
         # convert the image_embedding_size to a tensor since keras core
         # expects the input type to be a symbolic/concrete tensor.
         self.image_embedding_size = ops.convert_to_tensor(
-            image_embedding_size, dtype="int32"
+            image_embedding_size, dtype="float32"
         )
         self.input_image_size = ops.convert_to_tensor(
-            input_image_size, dtype="int32"
+            input_image_size, dtype="float32"
         )
         self.positional_embedding_layer = RandomFrequencyPositionalEmbeddings(
             num_positional_features=self.embed_dim // 2, scale=1
@@ -102,7 +102,7 @@ class PromptEncoder(keras.models.Model):
             self.not_a_point_embed,
             self.no_mask_embed,
         ]:
-            layer.build([])
+            layer.build()
 
     def get_dense_pe(self):
         return self.positional_embedding_layer(self.image_embedding_size)[

@@ -107,7 +107,6 @@ class MultiHeadAttentionWithRelativePE(keras.layers.Layer):
             del tf
         elif keras.backend.backend() == "torch":
             queries, keys, values = qkv.unbind(0)
-            del torch
         elif keras.backend.backend() == "jax":
             import jax
             queries, keys, values = [

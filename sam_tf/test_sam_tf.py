@@ -35,7 +35,7 @@ def test_windowed_transformer_encoder():
         input_size=(64, 64),
     )
     x = np.ones((1, 64, 64, 1280))
-    x_out = windowed_transformer_encoder(x)
+    x_out = ops.convert_to_numpy(windowed_transformer_encoder(x))
     assert tuple(x_out.shape) == (1, 64, 64, 1280)
     assert np.all(x_out == 1)
 

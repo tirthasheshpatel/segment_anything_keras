@@ -98,7 +98,7 @@ class PromptEncoder(keras.models.Model):
             self.not_a_point_embed,
             self.no_mask_embed,
         ]:
-            layer.build()
+            layer.build(None)
 
     def get_dense_pe(self):
         return self.positional_embedding_layer(ops.convert_to_tensor(

@@ -105,22 +105,7 @@ class MultiHeadAttentionWithRelativePE(keras.layers.Layer):
             axes=(2, 0, 3, 1, 4),
         )
         qkv = ops.reshape(qkv, (3, B * self.num_heads, H * W, self.key_dim))
-        # TODO: remove this once unstack is added in keras core
-        if keras.backend.backend() == "tensorflow":
-            import tensorflow as tf
-
-            queries, keys, values = tf.unstack(qkv, axis=0)
-            del tf
-        elif keras.backend.backend() == "torch":
-            queries, keys, values = qkv.unbind(0)
-        elif keras.backend.backend() == "jax":
-            import jax
-
-            queries, keys, values = [
-                jax.lax.index_in_dim(qkv, i, 0, keepdims=False)
-                for i in range(qkv.shape[0])
-            ]
-            del jax
+        queries, keys, values = ops.unstack(qkv, axis=0)
         attention_map = (queries * self.scale) @ ops.transpose(
             keys, axes=(0, 2, 1)
         )

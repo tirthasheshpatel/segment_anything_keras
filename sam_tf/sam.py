@@ -26,23 +26,8 @@ class SegmentAnythingModel(keras.models.Model):
         images = ops.concatenate(
             [self.preprocess_images(x["image"]) for x in batched_input], axis=0
         )
-        # TODO: remove this atrocity once unstack is added in keras core
         image_encodings = self.image_encoder(images)
-        if keras.backend.backend() == "tensorflow":
-            import tensorflow as tf
-
-            image_encodings = tf.unstack(image_encodings, axis=0)
-            del tf
-        elif keras.backend.backend() == "torch":
-            image_encodings = image_encodings.unbind(0)
-        elif keras.backend.backend() == "jax":
-            import jax
-
-            image_encodings = [
-                jax.lax.index_in_dim(image_encodings, i, 0, keepdims=False)
-                for i in range(image_encodings.shape[0])
-            ]
-            del jax
+        image_encodings = ops.unstack(image_encodings, axis=0)
 
         outputs = []
         for image_record, image_encoded in zip(batched_input, image_encodings):

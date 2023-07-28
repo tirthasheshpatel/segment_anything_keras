@@ -202,7 +202,7 @@ class WindowedTransformerEncoder(keras.layers.Layer):
         use_rel_pos=False,
         window_size=0,
         input_size=None,
-        activation=keras.activations.gelu,
+        activation="gelu",
         layer_norm_epsilon=1e-6,
         **kwargs
     ):
@@ -291,7 +291,7 @@ class PatchingAndEmbedding(keras.layers.Layer):
 
 
 @keras.utils.register_keras_serializable(package="keras_cv")
-class ImageEncoder(keras.layers.Layer):
+class ImageEncoder(keras.models.Model):
     def __init__(
         self,
         img_size=1024,

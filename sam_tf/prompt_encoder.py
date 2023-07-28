@@ -11,9 +11,18 @@ class RandomFrequencyPositionalEmbeddings(keras.layers.Layer):
         super().__init__(**kwargs)
         self.num_positional_features = num_positional_features
         self.scale = scale
-        self.positional_encoding_gaussian_matrix = self.scale * ops.random.normal(
+        init_func = lambda *a, **kw: self.scale * ops.random.normal(
             shape=(2, self.num_positional_features), dtype=self.dtype
         )
+        self.positional_encoding_gaussian_matrix = self.add_weight(
+            name="positional_emcoding_gaussian_matrix",
+            shape=(2, self.num_positional_features),
+            dtype=self.dtype,
+            trainable=False,
+            initializer=init_func
+        )
+        
+        self.built = True
 
     def __positional_encodings(self, coords):
         coords = 2 * coords - 1
@@ -27,8 +36,8 @@ class RandomFrequencyPositionalEmbeddings(keras.layers.Layer):
         grid = ops.ones(shape=(H, W), dtype=self.dtype)
         y_embed = ops.cumsum(grid, axis=0) - 0.5
         x_embed = ops.cumsum(grid, axis=1) - 0.5
-        y_embed = y_embed / ops.cast(H, "float32")
-        x_embed = x_embed / ops.cast(W, "float32")
+        y_embed = y_embed / ops.cast(H, self.dtype)
+        x_embed = x_embed / ops.cast(W, self.dtype)
         return self.__positional_encodings(ops.stack([x_embed, y_embed], axis=-1))
 
     def call_with_coords(self, coords_input, image_size):
@@ -51,14 +60,14 @@ class RandomFrequencyPositionalEmbeddings(keras.layers.Layer):
 
 
 @keras.saving.register_keras_serializable(package="keras_cv")
-class PromptEncoder(keras.layers.Layer):
+class PromptEncoder(keras.models.Model):
     def __init__(
         self,
         embed_dim,
         image_embedding_size,
         input_image_size,
         mask_in_chans,
-        activation=keras.activations.gelu,
+        activation="gelu",
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -78,10 +87,6 @@ class PromptEncoder(keras.layers.Layer):
         self.bottom_right_corner_embed = keras.layers.Embedding(1, embed_dim)
         self.not_a_point_embed = keras.layers.Embedding(1, embed_dim)
 
-        self.mask_input_size = (
-            4 * image_embedding_size[0],
-            4 * image_embedding_size[1],
-        )
         self.mask_downscaler = keras.models.Sequential(
             [
                 keras.layers.Conv2D(mask_in_chans // 4, kernel_size=2, strides=2),
@@ -98,8 +103,6 @@ class PromptEncoder(keras.layers.Layer):
         )
         self.no_mask_embed = keras.layers.Embedding(1, embed_dim)
 
-        # Build embeddings layers: I don't like this, maybe we could just have embedding matrices
-        # directly.
         for layer in [
             self.foreground_point_embed,
             self.background_point_embed,
@@ -109,6 +112,8 @@ class PromptEncoder(keras.layers.Layer):
             self.no_mask_embed,
         ]:
             layer.build(None)
+
+        self.built = True
 
     def get_dense_pe(self):
         # convert the image_embedding_size to a tensor since keras core

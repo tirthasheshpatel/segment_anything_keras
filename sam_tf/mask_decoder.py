@@ -20,6 +20,8 @@ class AttentionWithDownsampling(keras.layers.Layer):
 
         # Upsample
         self.out_proj = keras.layers.Dense(self.key_dim * self.num_heads)
+        
+        self.built = False
 
     def __separate_heads(self, x):
         B, N, C = x.shape
@@ -30,6 +32,22 @@ class AttentionWithDownsampling(keras.layers.Layer):
         B, N_H, N_T, C_PH = x.shape
         x = ops.transpose(x, axes=(0, 2, 1, 3))
         return ops.reshape(x, (B, N_T, N_H * C_PH))
+    
+    def build(
+        self,
+        query_shape,
+        value_shape,
+        key_shape
+    ):
+        assert query_shape[-1] == self.key_dim * self.num_heads
+        assert value_shape[-1] == self.key_dim * self.num_heads
+        assert key_shape[-1] == self.key_dim * self.num_heads
+        self.query_proj.build(query_shape)
+        self.key_proj.build(key_shape)
+        self.value_proj.build(value_shape)
+        self.out_proj.build([self.internal_dims * self.num_heads])
+        
+        self.built = True
 
     def call(self, query, value, key):
         query = self.query_proj(query)
@@ -71,7 +89,7 @@ class TwoWayAttention(keras.layers.Layer):
         mlp_dim,
         skip_first_layer_pe,
         attention_downsample_rate=2,
-        activation=keras.activations.relu,
+        activation="relu",
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -102,8 +120,44 @@ class TwoWayAttention(keras.layers.Layer):
             downsample_rate=attention_downsample_rate,
         )
         self.layer_norm4 = keras.layers.LayerNormalization(epsilon=1e-5)
+        
+        self.built = False
+        
+    def build(
+        self,
+        queries_shape,
+        keys_shape,
+        query_pe_shape,
+        key_pe_shape
+    ):
+        assert keys_shape == key_pe_shape, f"{keys_shape} != {key_pe_shape}"
+        assert queries_shape == query_pe_shape, f"{queries_shape} != {query_pe_shape}"
+        # print("queries_shape when building:", queries_shape)
+        self.self_attention.build(
+            query_shape=queries_shape,
+            value_shape=queries_shape,
+            key_shape=queries_shape,
+        )
+        self.layer_norm1.build(queries_shape)
+        self.cross_attention_token_to_image.build(
+            query_shape=queries_shape,
+            key_shape=keys_shape,
+            value_shape=keys_shape,
+        )
+        self.layer_norm2.build(queries_shape)
+        self.mlp_block.build(queries_shape)
+        self.layer_norm3.build(queries_shape)
+        self.cross_attention_image_to_token.build(
+            query_shape=keys_shape,
+            key_shape=queries_shape,
+            value_shape=queries_shape,
+        )
+        self.layer_norm4.build(keys_shape)
+        
+        self.built = True
 
     def call(self, queries, keys, query_pe, key_pe):
+        # print("Actual queries_shape:", queries.shape)
         if self.skip_first_layer_pe:
             queries = self.self_attention(query=queries, value=queries, key=queries)
         else:
@@ -157,7 +211,7 @@ class TwoWayTransformer(keras.layers.Layer):
         embedding_dim,
         num_heads,
         mlp_dim,
-        activation=keras.activations.relu,
+        activation="relu",
         attention_downsample_rate=2,
         **kwargs
     ):
@@ -186,6 +240,33 @@ class TwoWayTransformer(keras.layers.Layer):
             downsample_rate=attention_downsample_rate,
         )
         self.final_layer_norm = keras.layers.LayerNormalization(epsilon=1e-5)
+        
+        self.built = False
+        
+    def build(
+        self,
+        image_embedding_shape,
+        image_pe_shape,
+        point_embedding_shape
+    ):
+        assert image_embedding_shape == image_pe_shape, f"{image_embedding_shape} != {image_pe_shape}"
+        B, H, W, C = image_embedding_shape
+        image_embedding_shape = [B, H * W, C]
+        for layer in self.layers:
+            layer.build(
+                queries_shape=point_embedding_shape,
+                keys_shape=image_embedding_shape,
+                query_pe_shape=point_embedding_shape,
+                key_pe_shape=image_embedding_shape,
+            )
+        self.final_attention_token_to_image.build(
+            query_shape=point_embedding_shape,
+            key_shape=image_embedding_shape,
+            value_shape=image_embedding_shape,
+        )
+        self.final_layer_norm.build(point_embedding_shape)
+        
+        self.built = True
 
     def call(self, image_embedding, image_pe, point_embedding):
         B, H, W, C = image_embedding.shape
@@ -234,9 +315,16 @@ class MLP(keras.layers.Layer):
         self.dense_net = []
         for hidden_dim in h:
             self.dense_net.append(keras.layers.Dense(hidden_dim))
-            self.dense_net.append(keras.layers.Activation(keras.activations.relu))
+            self.dense_net.append(keras.layers.Activation("relu"))
         self.dense_net.append(keras.layers.Dense(output_dim))
         self.dense_net = keras.models.Sequential(self.dense_net)
+        
+        self.built = False
+        
+    def build(self, input_shape):
+        self.dense_net.build(input_shape)
+
+        self.built = True
 
     def call(self, x):
         return self.dense_net(x)
@@ -252,7 +340,7 @@ class MLP(keras.layers.Layer):
 
 
 @keras.utils.register_keras_serializable(package="keras_cv")
-class MaskDecoder(keras.layers.Layer):
+class MaskDecoder(keras.models.Model):
     def __init__(
         self,
         transformer_dim,
@@ -260,7 +348,7 @@ class MaskDecoder(keras.layers.Layer):
         num_multimask_outputs,
         iou_head_depth,
         iou_head_hidden_dim,
-        activation=keras.activations.gelu,
+        activation="gelu",
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -269,6 +357,7 @@ class MaskDecoder(keras.layers.Layer):
         self.num_multimask_outputs = num_multimask_outputs
         self.iou_head_depth = iou_head_depth
         self.iou_head_hidden_dim = iou_head_hidden_dim
+        self.activation = activation
 
         self.iou_token = keras.layers.Embedding(1, transformer_dim)
         self.num_mask_tokens = num_multimask_outputs + 1
@@ -293,9 +382,53 @@ class MaskDecoder(keras.layers.Layer):
             iou_head_hidden_dim, self.num_mask_tokens, iou_head_depth
         )
 
-        # Don't like this; maybe we can just use raw learnable weight matrices.
-        self.iou_token.build([])
-        self.mask_tokens.build([])
+        self.iou_token.build(None)
+        self.mask_tokens.build(None)
+        
+        self.built = False
+        
+    def build(
+        self,
+        image_embeddings_shape,
+        image_pe_shape,
+        sparse_prompt_embeddings_shape,
+        dense_prompt_embeddings_shape,
+        *args,
+        **kwargs
+    ):
+        assert image_embeddings_shape[1:] == dense_prompt_embeddings_shape[1:]
+        assert image_embeddings_shape[1:] == image_pe_shape[1:]
+        transformer_image_embed_shape = [
+            None,
+            image_embeddings_shape[1],
+            image_embeddings_shape[2],
+            image_embeddings_shape[3]
+        ]
+        tokens_shape = [
+            None,
+            1 + self.num_mask_tokens + sparse_prompt_embeddings_shape[1],
+            self.transformer_dim
+        ]
+        self.transformer.build(
+            image_embedding_shape=transformer_image_embed_shape,
+            image_pe_shape=transformer_image_embed_shape,
+            point_embedding_shape=tokens_shape
+        )
+        self.output_upscaling.build([
+            None, None, None, self.transformer_dim
+        ])
+        
+        for mlp in self.output_hypernetworks_mlps:
+            mlp.build([None, self.transformer_dim])
+            
+        self.iou_prediction_head.build([None, self.transformer_dim])
+        # print(self.iou_prediction_head.dense_net.layers[0].trainable_variables)
+        
+        # import numpy as np
+        # num_parameters = sum(np.prod(x.shape) for x in self.trainable_variables)
+        # print("Number of parameters after loading:", num_parameters)
+        
+        self.built = True
 
     def call(
         self,
@@ -397,7 +530,7 @@ class MaskDecoder(keras.layers.Layer):
     def from_config(cls, config):
         config.update(
             {
-                "transformer": keras.initializers.deserialize(
+                "transformer": keras.layers.deserialize(
                     config["transformer"]
                 )
             }

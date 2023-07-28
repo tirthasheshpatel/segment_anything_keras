@@ -1,3 +1,5 @@
+import os
+import tempfile
 import numpy as np
 
 from keras_cv.backend import keras
@@ -11,6 +13,8 @@ from sam_tf.image_encoder import (
 from sam_tf.prompt_encoder import PromptEncoder
 from sam_tf.mask_decoder import MaskDecoder, TwoWayAttention, TwoWayTransformer
 
+
+keras.src.utils.traceback_utils.disable_traceback_filtering()
 
 
 class TestSAM:
@@ -57,7 +61,13 @@ class TestSAM:
         num_parameters = sum(np.prod(tuple(x.shape)) for x in image_encoder.trainable_variables)
         assert x_out.shape == (1, 64, 64, 256)
         assert num_parameters == 637_026_048
-
+        
+        # saving test
+        path = os.path.join(tempfile.gettempdir(), "sam_tf_image_encoder.keras")
+        image_encoder.save(path)
+        loaded_model = keras.saving.load_model(path)
+        x_out_loaded = ops.convert_to_numpy(loaded_model(x))
+        np.testing.assert_equal(x_out, x_out_loaded)
 
     def get_points_labels_box_mask(self, B):
         prompt_encoder = PromptEncoder(
@@ -92,7 +102,6 @@ class TestSAM:
 
         return prompt_encoder, points, labels, box, input_mask
 
-
     def test_prompt_encoder(self):
         prompt_encoder, points, labels, box, input_mask = self.get_points_labels_box_mask(7)
 
@@ -108,7 +117,25 @@ class TestSAM:
         assert sparse_embeddings.shape == (7, 12, 256)
         assert dense_embeddings.shape == (7, 64, 64, 256)
         assert num_parameters == 6_220
-
+        
+        # saving test
+        path = os.path.join(tempfile.gettempdir(), "sam_tf_prompt_encoder.keras")
+        prompt_encoder.save(path)
+        loaded_model = keras.saving.load_model(path)
+        sparse_embeddings_loaded, dense_embeddings_loaded = loaded_model(
+            points=points, labels=labels, box=box, mask=input_mask
+        )
+        sparse_embeddings_loaded = ops.convert_to_numpy(sparse_embeddings_loaded)
+        dense_embeddings_loaded = ops.convert_to_numpy(dense_embeddings_loaded)
+        pegm_ref = ops.convert_to_numpy(
+            prompt_encoder.positional_embedding_layer.positional_encoding_gaussian_matrix
+        )
+        pegm_loaded = ops.convert_to_numpy(
+            loaded_model.positional_embedding_layer.positional_encoding_gaussian_matrix
+        )
+        np.testing.assert_equal(pegm_ref, pegm_loaded)
+        np.testing.assert_equal(sparse_embeddings, sparse_embeddings_loaded)
+        np.testing.assert_equal(dense_embeddings, dense_embeddings_loaded)
 
     def test_two_way_attention(self):
         prompt_encoder, points, labels, box, input_mask = self.get_points_labels_box_mask(1)
@@ -133,7 +160,6 @@ class TestSAM:
         assert queries.shape == (1, 12, 256)
         assert keys.shape == (1, 64 * 64, 256)
 
-
     def test_two_way_transformer(self):
         prompt_encoder, points, labels, box, input_mask = self.get_points_labels_box_mask(1)
         sparse_embeddings, _ = prompt_encoder(
@@ -151,7 +177,6 @@ class TestSAM:
         queries, keys = map(ops.convert_to_numpy, [queries, keys])
         assert queries.shape == (1, 12, 256)
         assert keys.shape == (1, 64 * 64, 256)
-
 
     def test_mask_decoder(self):
         prompt_encoder, points, labels, box, input_mask = self.get_points_labels_box_mask(1)
@@ -180,3 +205,19 @@ class TestSAM:
         assert masks.shape == (1, 3, 256, 256)
         assert iou_pred.shape == (1, 3)
         assert num_parameters == 4_058_340
+        
+        # saving test
+        path = os.path.join(tempfile.gettempdir(), "sam_tf_mask_decoder.keras")
+        mask_decoder.save(path)
+        loaded_model = keras.saving.load_model(path)
+        masks_loaded, iou_pred_loaded = loaded_model(
+            image_embeddings=image_embeddings,
+            image_pe=prompt_encoder.get_dense_pe(),
+            sparse_prompt_embeddings=sparse_embeddings[:1, ...],
+            dense_prompt_embeddings=dense_embeddings[:1, ...],
+            multimask_output=True,
+        )
+        masks_loaded = ops.convert_to_numpy(masks_loaded)
+        iou_pred_loaded = ops.convert_to_numpy(iou_pred_loaded)
+        np.testing.assert_equal(masks, masks_loaded)
+        np.testing.assert_equal(iou_pred, iou_pred_loaded)

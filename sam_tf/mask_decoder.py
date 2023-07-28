@@ -38,9 +38,6 @@ class AttentionWithDownsampling(keras.layers.Layer):
         return ops.reshape(x, (B, N_T, N_H * C_PH))
 
     def build(self, query_shape, value_shape, key_shape):
-        assert query_shape[-1] == self.key_dim * self.num_heads
-        assert value_shape[-1] == self.key_dim * self.num_heads
-        assert key_shape[-1] == self.key_dim * self.num_heads
         self.query_proj.build(query_shape)
         self.key_proj.build(key_shape)
         self.value_proj.build(value_shape)
@@ -125,11 +122,6 @@ class TwoWayAttention(keras.layers.Layer):
         self.built = False
 
     def build(self, queries_shape, keys_shape, query_pe_shape, key_pe_shape):
-        assert keys_shape == key_pe_shape, f"{keys_shape} != {key_pe_shape}"
-        assert (
-            queries_shape == query_pe_shape
-        ), f"{queries_shape} != {query_pe_shape}"
-        # print("queries_shape when building:", queries_shape)
         self.self_attention.build(
             query_shape=queries_shape,
             value_shape=queries_shape,
@@ -247,9 +239,6 @@ class TwoWayTransformer(keras.layers.Layer):
     def build(
         self, image_embedding_shape, image_pe_shape, point_embedding_shape
     ):
-        assert (
-            image_embedding_shape == image_pe_shape
-        ), f"{image_embedding_shape} != {image_pe_shape}"
         B, H, W, C = image_embedding_shape
         image_embedding_shape = [B, H * W, C]
         for layer in self.layers:
@@ -409,8 +398,6 @@ class MaskDecoder(keras.models.Model):
         *args,
         **kwargs,
     ):
-        assert image_embeddings_shape[1:] == dense_prompt_embeddings_shape[1:]
-        assert image_embeddings_shape[1:] == image_pe_shape[1:]
         transformer_image_embed_shape = [
             None,
             image_embeddings_shape[1],
@@ -433,11 +420,6 @@ class MaskDecoder(keras.models.Model):
             mlp.build([None, self.transformer_dim])
 
         self.iou_prediction_head.build([None, self.transformer_dim])
-        # print(self.iou_prediction_head.dense_net.layers[0].trainable_variables)
-
-        # import numpy as np
-        # num_parameters = sum(np.prod(x.shape) for x in self.trainable_variables)
-        # print("Number of parameters after loading:", num_parameters)
 
         self.built = True
 

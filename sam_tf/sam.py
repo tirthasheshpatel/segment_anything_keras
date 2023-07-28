@@ -83,10 +83,12 @@ class SegmentAnythingModel(keras.models.Model):
         masks = ops.image.resize(
             ops.transpose(masks, axes=(0, 2, 3, 1)),
             size=(self.image_encoder.img_size, self.image_encoder.img_size),
-            method="bilinear",
+            interpolation="bilinear",
         )
         masks = masks[..., : input_size[0], : input_size[1], :]
-        masks = ops.image.resize(masks, size=original_size, method="bilinear")
+        masks = ops.image.resize(
+            masks, size=original_size, interpolation="bilinear"
+        )
         return ops.transpose(masks, axes=(0, 3, 1, 2))
 
     def preprocess_images(self, x):

@@ -12,7 +12,7 @@ def get_rel_pos(query_size, key_size, rel_pos):
                 rel_pos, (1, rel_pos.shape[0], rel_pos.shape[1], 1)
             ),
             size=(max_rel_dist, rel_pos.shape[1]),
-            method="bilinear",
+            interpolation="bilinear",
         )
         rel_pos_resized = ops.squeeze(rel_pos_resized, axis=(0, -1))
     else:

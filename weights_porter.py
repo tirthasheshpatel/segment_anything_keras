@@ -53,8 +53,9 @@ def port_weights_huge(mb_model, torch_model):
             .numpy()
         ]
     )
-    mb_model.prompt_encoder.positional_embedding_layer.positional_encoding_gaussian_matrix = \
+    mb_model.prompt_encoder.positional_embedding_layer.positional_encoding_gaussian_matrix = (
         torch_model.prompt_encoder.pe_layer.positional_encoding_gaussian_matrix.cpu().numpy()
+    )
     for i in range(2):
         mb_model.mask_decoder.transformer.layers[i].self_attention.set_weights(
             [

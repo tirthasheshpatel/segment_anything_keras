@@ -23,9 +23,9 @@ def get_rel_pos(query_size, key_size, rel_pos):
     key_coordinates = ops.arange(key_size, dtype="float32")[None, :] * max(
         query_size / key_size, 1.0
     )
-    relative_coordinates = (query_coordinates - key_coordinates) + (key_size - 1) * max(
-        query_size / key_size, 1.0
-    )
+    relative_coordinates = (query_coordinates - key_coordinates) + (
+        key_size - 1
+    ) * max(query_size / key_size, 1.0)
     relative_coordinates = ops.cast(relative_coordinates, dtype="int64")
     return ops.take(rel_pos_resized, relative_coordinates, 0)
 
@@ -71,7 +71,9 @@ class MultiHeadAttentionWithRelativePE(keras.layers.Layer):
         self.scale = self.key_dim**-0.5
         self.use_bias = use_bias
 
-        self.qkv = keras.layers.Dense(key_dim * self.num_heads * 3, use_bias=self.use_bias)
+        self.qkv = keras.layers.Dense(
+            key_dim * self.num_heads * 3, use_bias=self.use_bias
+        )
         self.projection = keras.layers.Dense(key_dim * self.num_heads)
 
         self.input_size = input_size
@@ -97,29 +99,40 @@ class MultiHeadAttentionWithRelativePE(keras.layers.Layer):
     def call(self, x):
         B, H, W, C = x.shape
         qkv = ops.transpose(
-            ops.reshape(self.qkv(x), (B, H * W, 3, self.num_heads, self.key_dim)),
+            ops.reshape(
+                self.qkv(x), (B, H * W, 3, self.num_heads, self.key_dim)
+            ),
             axes=(2, 0, 3, 1, 4),
         )
         qkv = ops.reshape(qkv, (3, B * self.num_heads, H * W, self.key_dim))
         # TODO: remove this once unstack is added in keras core
         if keras.backend.backend() == "tensorflow":
             import tensorflow as tf
+
             queries, keys, values = tf.unstack(qkv, axis=0)
             del tf
         elif keras.backend.backend() == "torch":
             queries, keys, values = qkv.unbind(0)
         elif keras.backend.backend() == "jax":
             import jax
+
             queries, keys, values = [
                 jax.lax.index_in_dim(qkv, i, 0, keepdims=False)
                 for i in range(qkv.shape[0])
             ]
             del jax
-        attention_map = (queries * self.scale) @ ops.transpose(keys, axes=(0, 2, 1))
+        attention_map = (queries * self.scale) @ ops.transpose(
+            keys, axes=(0, 2, 1)
+        )
 
         if self.use_rel_pos:
             attention_map = add_decomposed_rel_pos(
-                attention_map, queries, self.rel_pos_h, self.rel_pos_w, (H, W), (H, W)
+                attention_map,
+                queries,
+                self.rel_pos_h,
+                self.rel_pos_w,
+                (H, W),
+                (H, W),
             )
         attention_map = ops.softmax(attention_map, axis=-1)
         x = ops.reshape(
@@ -133,13 +146,15 @@ class MultiHeadAttentionWithRelativePE(keras.layers.Layer):
 
     def get_config(self):
         config = super().get_config()
-        config.update({
-            "num_heads": self.num_heads,
-            "key_dim": self.key_dim,
-            "use_bias": self.use_bias,
-            "use_rel_pos": self.use_rel_pos,
-            "input_size": self.input_size,
-        })
+        config.update(
+            {
+                "num_heads": self.num_heads,
+                "key_dim": self.key_dim,
+                "use_bias": self.use_bias,
+                "use_rel_pos": self.use_rel_pos,
+                "input_size": self.input_size,
+            }
+        )
         return config
 
 
@@ -171,7 +186,9 @@ def window_partition(x, window_size):
 def window_unpartition(windows, window_size, HW_padded, HW):
     H_padded, W_padded = HW_padded
     H, W = HW
-    B = windows.shape[0] // ((H_padded // window_size) * (W_padded // window_size))
+    B = windows.shape[0] // (
+        (H_padded // window_size) * (W_padded // window_size)
+    )
     x = ops.reshape(
         windows,
         (
@@ -217,14 +234,20 @@ class WindowedTransformerEncoder(keras.layers.Layer):
         self.window_size = window_size
         self.use_rel_pos = use_rel_pos
 
-        self.layer_norm1 = keras.layers.LayerNormalization(epsilon=self.layer_norm_epsilon)
-        self.layer_norm2 = keras.layers.LayerNormalization(epsilon=self.layer_norm_epsilon)
+        self.layer_norm1 = keras.layers.LayerNormalization(
+            epsilon=self.layer_norm_epsilon
+        )
+        self.layer_norm2 = keras.layers.LayerNormalization(
+            epsilon=self.layer_norm_epsilon
+        )
         self.attention = MultiHeadAttentionWithRelativePE(
             num_heads=self.num_heads,
             key_dim=self.project_dim // self.num_heads,
             use_bias=use_bias,
             use_rel_pos=use_rel_pos,
-            input_size=input_size if window_size == 0 else (window_size, window_size),
+            input_size=input_size
+            if window_size == 0
+            else (window_size, window_size),
         )
         self.mlp_block = MLPBlock(project_dim, mlp_dim, activation)
 
@@ -246,32 +269,36 @@ class WindowedTransformerEncoder(keras.layers.Layer):
         x = x + self.mlp_block(self.layer_norm2(x))
 
         return x
-    
+
     def get_config(self):
         config = super().get_config()
-        config.update({
-            "project_dim": self.project_dim,
-            "mlp_dim": self.mlp_dim,
-            "num_heads": self.num_heads,
-            "use_bias": self.use_bias,
-            "use_rel_pos": self.use_rel_pos,
-            "window_size": self.window_size,
-            "input_size": self.input_size,
-            "activation": self.activation,
-            "layer_norm_epsilon": self.layer_norm_epsilon,
-        })
+        config.update(
+            {
+                "project_dim": self.project_dim,
+                "mlp_dim": self.mlp_dim,
+                "num_heads": self.num_heads,
+                "use_bias": self.use_bias,
+                "use_rel_pos": self.use_rel_pos,
+                "window_size": self.window_size,
+                "input_size": self.input_size,
+                "activation": self.activation,
+                "layer_norm_epsilon": self.layer_norm_epsilon,
+            }
+        )
         return config
 
 
 @keras.utils.register_keras_serializable(package="keras_cv")
 class PatchingAndEmbedding(keras.layers.Layer):
-    def __init__(self, kernel_size=(16, 16), strides=(16, 16), embed_dim=768, **kwargs):
+    def __init__(
+        self, kernel_size=(16, 16), strides=(16, 16), embed_dim=768, **kwargs
+    ):
         super().__init__(**kwargs)
 
         self.projection = keras.layers.Conv2D(
             embed_dim, kernel_size=kernel_size, strides=strides
         )
-        
+
         self.kernel_size = kernel_size
         self.strides = strides
         self.embed_dim = embed_dim
@@ -279,14 +306,16 @@ class PatchingAndEmbedding(keras.layers.Layer):
     def call(self, x):
         x = self.projection(x)
         return x
-    
+
     def get_config(self):
         config = super().get_config()
-        config.update({
-            "kernel_size": self.kernel_size,
-            "strides": self.strides,
-            "embed_dim": self.embed_dim
-        })
+        config.update(
+            {
+                "kernel_size": self.kernel_size,
+                "strides": self.strides,
+                "embed_dim": self.embed_dim,
+            }
+        )
         return config
 
 
@@ -353,17 +382,26 @@ class ImageEncoder(keras.models.Model):
                 num_heads=num_heads,
                 use_bias=use_bias,
                 use_rel_pos=use_rel_pos,
-                window_size=window_size if i not in global_attention_indices else 0,
+                window_size=window_size
+                if i not in global_attention_indices
+                else 0,
                 input_size=(img_size // patch_size, img_size // patch_size),
             )
             self.transformer_blocks.append(block)
-        self.transformer_blocks = keras.models.Sequential(self.transformer_blocks)
+        self.transformer_blocks = keras.models.Sequential(
+            self.transformer_blocks
+        )
         self.bottleneck = keras.models.Sequential(
             [
-                keras.layers.Conv2D(filters=out_chans, kernel_size=1, use_bias=False),
+                keras.layers.Conv2D(
+                    filters=out_chans, kernel_size=1, use_bias=False
+                ),
                 LayerNormalization(epsilon=layer_norm_epsilon),
                 keras.layers.Conv2D(
-                    filters=out_chans, kernel_size=3, padding="same", use_bias=False
+                    filters=out_chans,
+                    kernel_size=3,
+                    padding="same",
+                    use_bias=False,
                 ),
                 LayerNormalization(epsilon=layer_norm_epsilon),
             ]
@@ -376,23 +414,25 @@ class ImageEncoder(keras.models.Model):
             x = x + self.pos_embed
         x = self.transformer_blocks(x)
         return self.bottleneck(x)
-    
+
     def get_config(self):
         config = super().get_config()
-        config.update({
-            "img_size": self.img_size,
-            "patch_size": self.patch_size,
-            "in_chans": self.in_chans,
-            "embed_dim": self.embed_dim,
-            "depth": self.depth,
-            "mlp_dim": self.mlp_dim,
-            "num_heads": self.num_heads,
-            "out_chans": self.out_chans,
-            "use_bias": self.use_bias,
-            "use_abs_pos": self.use_abs_pos,
-            "use_rel_pos": self.use_rel_pos,
-            "window_size": self.window_size,
-            "global_attention_indices": self.global_attention_indices,
-            "layer_norm_epsilon": self.layer_norm_epsilon,
-        })
+        config.update(
+            {
+                "img_size": self.img_size,
+                "patch_size": self.patch_size,
+                "in_chans": self.in_chans,
+                "embed_dim": self.embed_dim,
+                "depth": self.depth,
+                "mlp_dim": self.mlp_dim,
+                "num_heads": self.num_heads,
+                "out_chans": self.out_chans,
+                "use_bias": self.use_bias,
+                "use_abs_pos": self.use_abs_pos,
+                "use_rel_pos": self.use_rel_pos,
+                "window_size": self.window_size,
+                "global_attention_indices": self.global_attention_indices,
+                "layer_norm_epsilon": self.layer_norm_epsilon,
+            }
+        )
         return config

@@ -14,13 +14,17 @@ class AttentionWithDownsampling(keras.layers.Layer):
         self.internal_dims = key_dim // downsample_rate
 
         # Downsample
-        self.query_proj = keras.layers.Dense(self.internal_dims * self.num_heads)
+        self.query_proj = keras.layers.Dense(
+            self.internal_dims * self.num_heads
+        )
         self.key_proj = keras.layers.Dense(self.internal_dims * self.num_heads)
-        self.value_proj = keras.layers.Dense(self.internal_dims * self.num_heads)
+        self.value_proj = keras.layers.Dense(
+            self.internal_dims * self.num_heads
+        )
 
         # Upsample
         self.out_proj = keras.layers.Dense(self.key_dim * self.num_heads)
-        
+
         self.built = False
 
     def __separate_heads(self, x):
@@ -32,13 +36,8 @@ class AttentionWithDownsampling(keras.layers.Layer):
         B, N_H, N_T, C_PH = x.shape
         x = ops.transpose(x, axes=(0, 2, 1, 3))
         return ops.reshape(x, (B, N_T, N_H * C_PH))
-    
-    def build(
-        self,
-        query_shape,
-        value_shape,
-        key_shape
-    ):
+
+    def build(self, query_shape, value_shape, key_shape):
         assert query_shape[-1] == self.key_dim * self.num_heads
         assert value_shape[-1] == self.key_dim * self.num_heads
         assert key_shape[-1] == self.key_dim * self.num_heads
@@ -46,7 +45,7 @@ class AttentionWithDownsampling(keras.layers.Layer):
         self.key_proj.build(key_shape)
         self.value_proj.build(value_shape)
         self.out_proj.build([self.internal_dims * self.num_heads])
-        
+
         self.built = True
 
     def call(self, query, value, key):
@@ -69,14 +68,16 @@ class AttentionWithDownsampling(keras.layers.Layer):
         attention_map = out @ value
         attention_map = self.__recombine_heads(attention_map)
         return self.out_proj(attention_map)
-    
+
     def get_config(self):
         config = super().get_config()
-        config.update({
-            "num_heads": self.num_heads,
-            "key_dim": self.key_dim,
-            "downsample_rate": self.downsample_rate
-        })
+        config.update(
+            {
+                "num_heads": self.num_heads,
+                "key_dim": self.key_dim,
+                "downsample_rate": self.downsample_rate,
+            }
+        )
         return config
 
 
@@ -90,7 +91,7 @@ class TwoWayAttention(keras.layers.Layer):
         skip_first_layer_pe,
         attention_downsample_rate=2,
         activation="relu",
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.num_heads = num_heads
@@ -110,7 +111,7 @@ class TwoWayAttention(keras.layers.Layer):
             downsample_rate=attention_downsample_rate,
         )
         self.layer_norm2 = keras.layers.LayerNormalization(epsilon=1e-5)
-        
+
         self.mlp_block = MLPBlock(key_dim * num_heads, mlp_dim, activation)
 
         self.layer_norm3 = keras.layers.LayerNormalization(epsilon=1e-5)
@@ -120,18 +121,14 @@ class TwoWayAttention(keras.layers.Layer):
             downsample_rate=attention_downsample_rate,
         )
         self.layer_norm4 = keras.layers.LayerNormalization(epsilon=1e-5)
-        
+
         self.built = False
-        
-    def build(
-        self,
-        queries_shape,
-        keys_shape,
-        query_pe_shape,
-        key_pe_shape
-    ):
+
+    def build(self, queries_shape, keys_shape, query_pe_shape, key_pe_shape):
         assert keys_shape == key_pe_shape, f"{keys_shape} != {key_pe_shape}"
-        assert queries_shape == query_pe_shape, f"{queries_shape} != {query_pe_shape}"
+        assert (
+            queries_shape == query_pe_shape
+        ), f"{queries_shape} != {query_pe_shape}"
         # print("queries_shape when building:", queries_shape)
         self.self_attention.build(
             query_shape=queries_shape,
@@ -153,13 +150,15 @@ class TwoWayAttention(keras.layers.Layer):
             value_shape=queries_shape,
         )
         self.layer_norm4.build(keys_shape)
-        
+
         self.built = True
 
     def call(self, queries, keys, query_pe, key_pe):
         # print("Actual queries_shape:", queries.shape)
         if self.skip_first_layer_pe:
-            queries = self.self_attention(query=queries, value=queries, key=queries)
+            queries = self.self_attention(
+                query=queries, value=queries, key=queries
+            )
         else:
             queries_with_pe = queries + query_pe
             attention_map = self.self_attention(
@@ -189,17 +188,19 @@ class TwoWayAttention(keras.layers.Layer):
         keys = self.layer_norm4(keys)
 
         return queries, keys
-    
+
     def get_config(self):
         config = super().get_config()
-        config.update({
-            "num_heads": self.num_heads,
-            "key_dim": self.key_dim,
-            "mlp_dim": self.mlp_dim,
-            "skip_first_layer_pe": self.skip_first_layer_pe,
-            "attention_downsample_rate": self.attention_downsample_rate,
-            "activation": self.activation,
-        })
+        config.update(
+            {
+                "num_heads": self.num_heads,
+                "key_dim": self.key_dim,
+                "mlp_dim": self.mlp_dim,
+                "skip_first_layer_pe": self.skip_first_layer_pe,
+                "attention_downsample_rate": self.attention_downsample_rate,
+                "activation": self.activation,
+            }
+        )
         return config
 
 
@@ -213,7 +214,7 @@ class TwoWayTransformer(keras.layers.Layer):
         mlp_dim,
         activation="relu",
         attention_downsample_rate=2,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.depth = depth
@@ -240,16 +241,15 @@ class TwoWayTransformer(keras.layers.Layer):
             downsample_rate=attention_downsample_rate,
         )
         self.final_layer_norm = keras.layers.LayerNormalization(epsilon=1e-5)
-        
+
         self.built = False
-        
+
     def build(
-        self,
-        image_embedding_shape,
-        image_pe_shape,
-        point_embedding_shape
+        self, image_embedding_shape, image_pe_shape, point_embedding_shape
     ):
-        assert image_embedding_shape == image_pe_shape, f"{image_embedding_shape} != {image_pe_shape}"
+        assert (
+            image_embedding_shape == image_pe_shape
+        ), f"{image_embedding_shape} != {image_pe_shape}"
         B, H, W, C = image_embedding_shape
         image_embedding_shape = [B, H * W, C]
         for layer in self.layers:
@@ -265,7 +265,7 @@ class TwoWayTransformer(keras.layers.Layer):
             value_shape=image_embedding_shape,
         )
         self.final_layer_norm.build(point_embedding_shape)
-        
+
         self.built = True
 
     def call(self, image_embedding, image_pe, point_embedding):
@@ -278,7 +278,10 @@ class TwoWayTransformer(keras.layers.Layer):
 
         for layer in self.layers:
             queries, keys = layer(
-                queries=queries, keys=keys, query_pe=point_embedding, key_pe=image_pe
+                queries=queries,
+                keys=keys,
+                query_pe=point_embedding,
+                key_pe=image_pe,
             )
 
         queries_with_pe = queries + point_embedding
@@ -290,17 +293,19 @@ class TwoWayTransformer(keras.layers.Layer):
         queries = self.final_layer_norm(queries)
 
         return queries, keys
-    
+
     def get_config(self):
         config = super().get_config()
-        config.update({
-            "depth": self.depth,
-            "embedding_dim": self.embedding_dim,
-            "num_heads": self.num_heads,
-            "mlp_dim": self.mlp_dim,
-            "activation": self.activation,
-            "attention_downsample_rate": self.attention_downsample_rate,
-        })
+        config.update(
+            {
+                "depth": self.depth,
+                "embedding_dim": self.embedding_dim,
+                "num_heads": self.num_heads,
+                "mlp_dim": self.mlp_dim,
+                "activation": self.activation,
+                "attention_downsample_rate": self.attention_downsample_rate,
+            }
+        )
         return config
 
 
@@ -318,9 +323,9 @@ class MLP(keras.layers.Layer):
             self.dense_net.append(keras.layers.Activation("relu"))
         self.dense_net.append(keras.layers.Dense(output_dim))
         self.dense_net = keras.models.Sequential(self.dense_net)
-        
+
         self.built = False
-        
+
     def build(self, input_shape):
         self.dense_net.build(input_shape)
 
@@ -328,14 +333,16 @@ class MLP(keras.layers.Layer):
 
     def call(self, x):
         return self.dense_net(x)
-    
+
     def get_config(self):
         config = super().get_config()
-        config.update({
-            "hidden_dim": self.hidden_dim,
-            "output_dim": self.output_dim,
-            "num_layers": self.num_layers
-        })
+        config.update(
+            {
+                "hidden_dim": self.hidden_dim,
+                "output_dim": self.output_dim,
+                "num_layers": self.num_layers,
+            }
+        )
         return config
 
 
@@ -349,7 +356,7 @@ class MaskDecoder(keras.models.Model):
         iou_head_depth,
         iou_head_hidden_dim,
         activation="gelu",
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.transformer_dim = transformer_dim
@@ -361,14 +368,20 @@ class MaskDecoder(keras.models.Model):
 
         self.iou_token = keras.layers.Embedding(1, transformer_dim)
         self.num_mask_tokens = num_multimask_outputs + 1
-        self.mask_tokens = keras.layers.Embedding(self.num_mask_tokens, transformer_dim)
+        self.mask_tokens = keras.layers.Embedding(
+            self.num_mask_tokens, transformer_dim
+        )
 
         self.output_upscaling = keras.models.Sequential(
             [
-                keras.layers.Conv2DTranspose(transformer_dim // 4, kernel_size=2, strides=2),
+                keras.layers.Conv2DTranspose(
+                    transformer_dim // 4, kernel_size=2, strides=2
+                ),
                 LayerNormalization(),
                 keras.layers.Activation(activation),
-                keras.layers.Conv2DTranspose(transformer_dim // 8, kernel_size=2, strides=2),
+                keras.layers.Conv2DTranspose(
+                    transformer_dim // 8, kernel_size=2, strides=2
+                ),
                 keras.layers.Activation(activation),
             ]
         )
@@ -384,9 +397,9 @@ class MaskDecoder(keras.models.Model):
 
         self.iou_token.build(None)
         self.mask_tokens.build(None)
-        
+
         self.built = False
-        
+
     def build(
         self,
         image_embeddings_shape,
@@ -394,7 +407,7 @@ class MaskDecoder(keras.models.Model):
         sparse_prompt_embeddings_shape,
         dense_prompt_embeddings_shape,
         *args,
-        **kwargs
+        **kwargs,
     ):
         assert image_embeddings_shape[1:] == dense_prompt_embeddings_shape[1:]
         assert image_embeddings_shape[1:] == image_pe_shape[1:]
@@ -402,32 +415,30 @@ class MaskDecoder(keras.models.Model):
             None,
             image_embeddings_shape[1],
             image_embeddings_shape[2],
-            image_embeddings_shape[3]
+            image_embeddings_shape[3],
         ]
         tokens_shape = [
             None,
             1 + self.num_mask_tokens + sparse_prompt_embeddings_shape[1],
-            self.transformer_dim
+            self.transformer_dim,
         ]
         self.transformer.build(
             image_embedding_shape=transformer_image_embed_shape,
             image_pe_shape=transformer_image_embed_shape,
-            point_embedding_shape=tokens_shape
+            point_embedding_shape=tokens_shape,
         )
-        self.output_upscaling.build([
-            None, None, None, self.transformer_dim
-        ])
-        
+        self.output_upscaling.build([None, None, None, self.transformer_dim])
+
         for mlp in self.output_hypernetworks_mlps:
             mlp.build([None, self.transformer_dim])
-            
+
         self.iou_prediction_head.build([None, self.transformer_dim])
         # print(self.iou_prediction_head.dense_net.layers[0].trainable_variables)
-        
+
         # import numpy as np
         # num_parameters = sum(np.prod(x.shape) for x in self.trainable_variables)
         # print("Number of parameters after loading:", num_parameters)
-        
+
         self.built = True
 
     def call(
@@ -467,7 +478,9 @@ class MaskDecoder(keras.models.Model):
                 output_tokens.shape[1],
             ),
         )
-        tokens = ops.concatenate([output_tokens, sparse_prompt_embeddings], axis=1)
+        tokens = ops.concatenate(
+            [output_tokens, sparse_prompt_embeddings], axis=1
+        )
 
         source = ops.broadcast_to(
             image_embeddings,
@@ -486,11 +499,13 @@ class MaskDecoder(keras.models.Model):
                 image_embeddings.shape[1],
                 image_embeddings.shape[2],
                 image_embeddings.shape[3],
-            )
+            ),
         )
         B, H, W, C = source.shape
 
-        hidden_state, source = self.transformer(source, positional_source, tokens)
+        hidden_state, source = self.transformer(
+            source, positional_source, tokens
+        )
         iou_token_out = hidden_state[:, 0, :]
         mask_tokens_out = hidden_state[:, 1 : (1 + self.num_mask_tokens), :]
 
@@ -504,7 +519,8 @@ class MaskDecoder(keras.models.Model):
         hyper_in = ops.stack(hyper_in_list, axis=1)
         B, H, W, C = upscaled_embeddings.shape
         upscaled_embeddings = ops.reshape(
-            ops.transpose(upscaled_embeddings, axes=(0, 3, 1, 2)), (B, C, H * W)
+            ops.transpose(upscaled_embeddings, axes=(0, 3, 1, 2)),
+            (B, C, H * W),
         )
         masks = ops.reshape(
             hyper_in @ upscaled_embeddings, (B, self.num_mask_tokens, H, W)
@@ -513,26 +529,26 @@ class MaskDecoder(keras.models.Model):
         iou_pred = self.iou_prediction_head(iou_token_out)
 
         return masks, iou_pred
-    
+
     def get_config(self):
         config = super().get_config()
-        config.update({
-            "transformer_dim": self.transformer_dim,
-            "transformer": keras.saving.serialize_keras_object(self.transformer),
-            "num_multimask_outputs": self.num_multimask_outputs,
-            "iou_head_depth": self.iou_head_depth,
-            "iou_head_hidden_dim": self.iou_head_hidden_dim,
-            "activation": self.activation,
-        })
+        config.update(
+            {
+                "transformer_dim": self.transformer_dim,
+                "transformer": keras.saving.serialize_keras_object(
+                    self.transformer
+                ),
+                "num_multimask_outputs": self.num_multimask_outputs,
+                "iou_head_depth": self.iou_head_depth,
+                "iou_head_hidden_dim": self.iou_head_hidden_dim,
+                "activation": self.activation,
+            }
+        )
         return config
-    
+
     @classmethod
     def from_config(cls, config):
         config.update(
-            {
-                "transformer": keras.layers.deserialize(
-                    config["transformer"]
-                )
-            }
+            {"transformer": keras.layers.deserialize(config["transformer"])}
         )
         return super().from_config(config)

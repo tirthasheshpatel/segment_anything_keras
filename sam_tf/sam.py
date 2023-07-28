@@ -30,12 +30,14 @@ class SegmentAnythingModel(keras.models.Model):
         image_encodings = self.image_encoder(images)
         if keras.backend.backend() == "tensorflow":
             import tensorflow as tf
+
             image_encodings = tf.unstack(image_encodings, axis=0)
             del tf
         elif keras.backend.backend() == "torch":
             image_encodings = image_encodings.unbind(0)
         elif keras.backend.backend() == "jax":
             import jax
+
             image_encodings = [
                 jax.lax.index_in_dim(image_encodings, i, 0, keepdims=False)
                 for i in range(image_encodings.shape[0])

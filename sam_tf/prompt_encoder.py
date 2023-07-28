@@ -19,9 +19,9 @@ class RandomFrequencyPositionalEmbeddings(keras.layers.Layer):
             shape=(2, self.num_positional_features),
             dtype=self.dtype,
             trainable=False,
-            initializer=init_func
+            initializer=init_func,
         )
-        
+
         self.built = True
 
     def __positional_encodings(self, coords):
@@ -38,7 +38,9 @@ class RandomFrequencyPositionalEmbeddings(keras.layers.Layer):
         x_embed = ops.cumsum(grid, axis=1) - 0.5
         y_embed = y_embed / ops.cast(H, self.dtype)
         x_embed = x_embed / ops.cast(W, self.dtype)
-        return self.__positional_encodings(ops.stack([x_embed, y_embed], axis=-1))
+        return self.__positional_encodings(
+            ops.stack([x_embed, y_embed], axis=-1)
+        )
 
     def call_with_coords(self, coords_input, image_size):
         coords_normalized = ops.stack(
@@ -49,13 +51,15 @@ class RandomFrequencyPositionalEmbeddings(keras.layers.Layer):
             axis=-1,
         )
         return self.__positional_encodings(coords_normalized)
-    
+
     def get_config(self):
         config = super().get_config()
-        config.update({
-            "num_positional_features": self.num_positional_features,
-            "scale": self.scale
-        })
+        config.update(
+            {
+                "num_positional_features": self.num_positional_features,
+                "scale": self.scale,
+            }
+        )
         return config
 
 
@@ -89,7 +93,9 @@ class PromptEncoder(keras.models.Model):
 
         self.mask_downscaler = keras.models.Sequential(
             [
-                keras.layers.Conv2D(mask_in_chans // 4, kernel_size=2, strides=2),
+                keras.layers.Conv2D(
+                    mask_in_chans // 4, kernel_size=2, strides=2
+                ),
                 LayerNormalization(),
                 keras.layers.Activation(activation),
                 keras.layers.Conv2D(mask_in_chans, kernel_size=2, strides=2),
@@ -118,14 +124,16 @@ class PromptEncoder(keras.models.Model):
     def get_dense_pe(self):
         # convert the image_embedding_size to a tensor since keras core
         # expects the input type to be a symbolic/concrete tensor.
-        return self.positional_embedding_layer(ops.convert_to_tensor(
-            self.image_embedding_size, dtype="float32"
-        ))[None, ...]
+        return self.positional_embedding_layer(
+            ops.convert_to_tensor(self.image_embedding_size, dtype="float32")
+        )[None, ...]
 
     def __embed_points(self, points, labels, pad):
         points = points + 0.5
         if pad:
-            padding_point = ops.zeros((points.shape[0], 1, 2), dtype=self.dtype)
+            padding_point = ops.zeros(
+                (points.shape[0], 1, 2), dtype=self.dtype
+            )
             padding_label = -ops.ones((labels.shape[0], 1), dtype=self.dtype)
             points = ops.concatenate([points, padding_point], axis=1)
             labels = ops.concatenate([labels, padding_label], axis=1)
@@ -142,7 +150,8 @@ class PromptEncoder(keras.models.Model):
             labels == -1,
             # TODO: for whatever reason, ops.broadcast_to doesn't work here, so
             #       we instead use zeros_like to broadcast to the correct shape.
-            self.not_a_point_embed.weights[0] + ops.zeros_like(point_embeddings),
+            self.not_a_point_embed.weights[0]
+            + ops.zeros_like(point_embeddings),
             point_embeddings,
         )
         return point_embeddings
@@ -157,7 +166,8 @@ class PromptEncoder(keras.models.Model):
             corner_embedding[:, 0, :] + self.top_left_corner_embed.weights[0]
         )
         bottom_right_embedding = (
-            corner_embedding[:, 1, :] + self.bottom_right_corner_embed.weights[0]
+            corner_embedding[:, 1, :]
+            + self.bottom_right_corner_embed.weights[0]
         )
         corner_embedding = ops.stack(
             [top_left_embedding, bottom_right_embedding], axis=1
@@ -180,12 +190,20 @@ class PromptEncoder(keras.models.Model):
         sparse_embeddings = ops.zeros((B, 0, self.embed_dim), dtype=self.dtype)
         if points is not None:
             if labels is None:
-                raise ValueError("`labels` must also be provided with `points`")
-            point_embeddings = self.__embed_points(points, labels, pad=(box is None))
-            sparse_embeddings = ops.concatenate([sparse_embeddings, point_embeddings], axis=1)
+                raise ValueError(
+                    "`labels` must also be provided with `points`"
+                )
+            point_embeddings = self.__embed_points(
+                points, labels, pad=(box is None)
+            )
+            sparse_embeddings = ops.concatenate(
+                [sparse_embeddings, point_embeddings], axis=1
+            )
         if box is not None:
             box_embeddings = self.__embed_box(box)
-            sparse_embeddings = ops.concatenate([sparse_embeddings, box_embeddings], axis=1)
+            sparse_embeddings = ops.concatenate(
+                [sparse_embeddings, box_embeddings], axis=1
+            )
         if mask is not None:
             dense_embeddings = self.__embed_mask(mask)
         else:
@@ -201,14 +219,16 @@ class PromptEncoder(keras.models.Model):
                 ),
             )
         return sparse_embeddings, dense_embeddings
-    
+
     def get_config(self):
         config = super().get_config()
-        config.update({
-            "embed_dim": self.embed_dim,
-            "image_embedding_size": self.image_embedding_size,
-            "input_image_size": self.input_image_size,
-            "mask_in_chans": self.mask_in_chans,
-            "activation": self.activation,
-        })
+        config.update(
+            {
+                "embed_dim": self.embed_dim,
+                "image_embedding_size": self.image_embedding_size,
+                "input_image_size": self.input_image_size,
+                "mask_in_chans": self.mask_in_chans,
+                "activation": self.activation,
+            }
+        )
         return config

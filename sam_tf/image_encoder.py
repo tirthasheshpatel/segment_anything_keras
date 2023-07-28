@@ -1,7 +1,7 @@
 from keras_cv.backend import keras
 from keras_cv.backend import ops
 
-from sam_tf.common import LayerNormalization, MLPBlock
+from sam_tf.common import MLPBlock
 
 
 def get_rel_pos(query_size, key_size, rel_pos):
@@ -381,14 +381,14 @@ class ImageEncoder(keras.models.Model):
                 keras.layers.Conv2D(
                     filters=out_chans, kernel_size=1, use_bias=False
                 ),
-                LayerNormalization(epsilon=layer_norm_epsilon),
+                keras.layers.BatchNormalization(epsilon=1e-6),
                 keras.layers.Conv2D(
                     filters=out_chans,
                     kernel_size=3,
                     padding="same",
                     use_bias=False,
                 ),
-                LayerNormalization(epsilon=layer_norm_epsilon),
+                keras.layers.BatchNormalization(epsilon=1e-6),
             ]
         )
 

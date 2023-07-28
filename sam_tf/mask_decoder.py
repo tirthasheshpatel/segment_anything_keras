@@ -1,7 +1,7 @@
 from keras_cv.backend import keras
 from keras_cv.backend import ops
 
-from sam_tf.common import LayerNormalization, MLPBlock
+from sam_tf.common import MLPBlock
 
 
 @keras.utils.register_keras_serializable(package="keras_cv")
@@ -366,7 +366,7 @@ class MaskDecoder(keras.models.Model):
                 keras.layers.Conv2DTranspose(
                     transformer_dim // 4, kernel_size=2, strides=2
                 ),
-                LayerNormalization(),
+                keras.layers.BatchNormalization(epsilon=1e-6),
                 keras.layers.Activation(activation),
                 keras.layers.Conv2DTranspose(
                     transformer_dim // 8, kernel_size=2, strides=2

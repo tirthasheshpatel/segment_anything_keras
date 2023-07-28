@@ -2,6 +2,7 @@ import math
 
 from keras_cv.backend import keras
 from keras_cv.backend import ops
+from sam_tf.common import LayerNormalization
 
 
 @keras.saving.register_keras_serializable(package="keras_cv")
@@ -95,10 +96,10 @@ class PromptEncoder(keras.models.Model):
                 keras.layers.Conv2D(
                     mask_in_chans // 4, kernel_size=2, strides=2
                 ),
-                keras.layers.BatchNormalization(epsilon=1e-6),
+                LayerNormalization(),
                 keras.layers.Activation(activation),
                 keras.layers.Conv2D(mask_in_chans, kernel_size=2, strides=2),
-                keras.layers.BatchNormalization(epsilon=1e-6),
+                LayerNormalization(),
                 keras.layers.Activation(activation),
                 keras.layers.Conv2D(embed_dim, kernel_size=1),
             ]

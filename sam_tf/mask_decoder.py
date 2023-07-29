@@ -1,7 +1,7 @@
 from keras_cv.backend import keras
 from keras_cv.backend import ops
 
-from sam_tf.common import BatchNormalization, MLPBlock
+from sam_tf.common import MLPBlock
 
 
 @keras.utils.register_keras_serializable(package="keras_cv")
@@ -46,7 +46,10 @@ class MultiHeadAttentionWithDownsampling(keras.layers.Layer):
         self.built = False
 
     def __separate_heads(self, x):
-        B, N, C = x.shape1933
+        B, N, C = x.shape
+        x = ops.reshape(x, (B, N, self.num_heads, C // self.num_heads))
+        return ops.transpose(x, axes=(0, 2, 1, 3))
+
     def __recombine_heads(self, x):
         B, N_H, N_T, C_PH = x.shape
         x = ops.transpose(x, axes=(0, 2, 1, 3))
@@ -476,7 +479,7 @@ class MaskDecoder(keras.models.Model):
                 keras.layers.Conv2DTranspose(
                     transformer_dim // 4, kernel_size=2, strides=2
                 ),
-                BatchNormalization(),
+                keras.layers.LayerNormalization(epsilon=1e-6),
                 keras.layers.Activation(activation),
                 keras.layers.Conv2DTranspose(
                     transformer_dim // 8, kernel_size=2, strides=2

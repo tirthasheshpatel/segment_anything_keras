@@ -5,6 +5,16 @@ from keras_cv.backend import ops
 @keras.utils.register_keras_serializable(package="keras_cv")
 class MLPBlock(keras.layers.Layer):
     def __init__(self, embedding_dim, mlp_dim, activation="gelu", **kwargs):
+        """A MLP block with architecture
+        `embedding_dim -> mlp_dim -> embedding_dim`.
+
+        Args:
+            embedding_dim (int): The number of units in the input and the
+                output layer.
+            mlp_dim (int): The number of units in the hidden layer.
+            activation (str, optional): The activation of the output.
+                Defaults to "gelu".
+        """
         super().__init__(**kwargs)
         self.dense_layer1 = keras.layers.Dense(mlp_dim)
         self.dense_layer2 = keras.layers.Dense(embedding_dim)
@@ -37,8 +47,14 @@ class MLPBlock(keras.layers.Layer):
 
 
 @keras.utils.register_keras_serializable(package="keras_cv")
-class LayerNormalization(keras.layers.Layer):
+class BatchNormalization(keras.layers.Layer):
     def __init__(self, epsilon=1e-6, **kwargs):
+        """A BatchNormalization layer without moving mean and variance.
+
+        Args:
+            epsilon (float, optional): Small float added to variance to
+                avoid dividing by zero. Defaults to 1e-6.
+        """
         super().__init__(**kwargs)
         self.epsilon = epsilon
 

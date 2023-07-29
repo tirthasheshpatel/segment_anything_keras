@@ -1,10 +1,23 @@
 from keras_cv.backend import keras
 from keras_cv.backend import ops
 
-from sam_tf.common import LayerNormalization, MLPBlock
+from sam_tf.common import BatchNormalization, MLPBlock
 
 
 def get_rel_pos(query_size, key_size, rel_pos):
+    """
+    Get relative positional embeddings according to the relative positions of
+    query and key sizes.
+
+    Args:
+        query_size (int): The number of features of the queries.
+        key_size (int): The number of features of the keys.
+        rel_pos (tensor): Relative positional embedding tensor.
+
+    Returns:
+        tensor: Extracted positional embeddings according to relative
+            positions.
+    """
     max_rel_dist = 2 * max(query_size, key_size) - 1
     if rel_pos.shape[0] != max_rel_dist:
         rel_pos_resized = ops.image.resize(
@@ -33,6 +46,28 @@ def get_rel_pos(query_size, key_size, rel_pos):
 def add_decomposed_rel_pos(
     attention_map, queries, rel_pos_h, rel_pos_w, query_size, key_size
 ):
+    """
+    Calculate decomposed Relative Positional Embeddings from :paper:`mvitv2`.
+
+    Args:
+        attention_map (tensor): Attention map.
+        queries (tensor): Queries in the attention layer with shape
+            `(B, q_h * q_w, C)`.
+        rel_pos_h (tensor): Relative position embeddings `(Lh, C)` for height
+            axis.
+        rel_pos_w (tensor): relative position embeddings `(Lw, C)` for width
+            axis.
+        query_size (tuple[int, int]): Spatial sequence size of queries with
+            `(q_h, q_w)`.
+        key_size (tuple[int, int]): Spatial sequence size of keys with
+            `(k_h, k_w)`.
+
+    Returns:
+        tensor: attention map with added relative positional embeddings.
+        
+    References:
+        - https://github.com/facebookresearch/mvit/blob/19786631e330df9f3622e5402b4a419a263a2c80/mvit/models/attention.py  # noqa: E501
+    """
     query_height, query_width = query_size
     key_height, key_width = key_size
     rel_heights = get_rel_pos(query_height, key_height, rel_pos_h)
@@ -56,6 +91,24 @@ def add_decomposed_rel_pos(
 
 @keras.saving.register_keras_serializable(package="keras_cv")
 class MultiHeadAttentionWithRelativePE(keras.layers.Layer):
+    """Multi-head Attention block with relative position embeddings.
+
+    Args:
+        num_heads (int): Number of attention heads.
+        key_dim (int): Size of each attention head for query, key, and
+            value.
+        use_bias (bool, optional): Whether to use bias when projecting
+            the queries, keys, and values. Defaults to `True`.
+        use_rel_pos (bool, optional): Whether to use relative positional
+            embeddings or not. Defaults to `False`.
+        input_size (tuple[int, int], optional): Size of the input image.
+            Must be provided when using relative positional embeddings.
+            Defaults to `None`.
+
+    Raises:
+        ValueError: When `input_size = None` with `use_rel_pos = True`.
+    """
+
     def __init__(
         self,
         num_heads,
@@ -193,7 +246,30 @@ def window_unpartition(windows, window_size, HW_padded, HW):
 
 @keras.utils.register_keras_serializable(package="keras_cv")
 class WindowedTransformerEncoder(keras.layers.Layer):
-    """Transformer blocks with support of window attention and residual propagation blocks"""
+    """Transformer blocks with support of window attention and residual
+    propagation blocks.
+
+    Args:
+        project_dim (int): the dimensionality of the projection of the
+            encoder, and output of the `MultiHeadAttention`.
+        mlp_dim (int): the intermediate dimensionality of the MLP head before
+            projecting to `project_dim`.
+        num_heads (int): the number of heads for the `MultiHeadAttention`
+            layer.
+        use_bias (bool, optional): Whether to use bias to project the keys,
+            queries, and values in the attention layer. Defaults to `True`.
+        use_rel_pos (bool, optional): Whether to use relative positional
+            emcodings in the attention layer. Defaults to `False`.
+        window_size (int, optional): Window size for windowed attention.
+            Defaults to `0`.
+        input_size (tuple[int, int], optional): Height and width of the input
+            image as a tuple of integers. Must be provided when using relative
+            positional embeddings. Defaults to `None`.
+        activation (str, optional): the activation function to apply in the
+            MLP head - should be a function. Defaults to `"gelu"`.
+        layer_norm_epsilon (float, optional): The epsilon to use in the layer
+            normalization layers. Defaults to `1e-6`.
+    """
 
     def __init__(
         self,
@@ -275,6 +351,17 @@ class WindowedTransformerEncoder(keras.layers.Layer):
 
 @keras.utils.register_keras_serializable(package="keras_cv")
 class PatchingAndEmbedding(keras.layers.Layer):
+    """Image to Patch Embedding using only a conv layer (without
+    layer normalization).
+
+    Args:
+        kernel_size (tuple[int, int], optional): Kernel size of the
+            projection layer. Defaults to `(16, 16)`.
+        strides (tuple, optional): Strides of the projection layer.
+            Defaults to `(16, 16)`.
+        embed_dim (int, optional): Number of filters to use in the
+            projection layer i.e. projection size. Defaults to `768`.
+    """
     def __init__(
         self, kernel_size=(16, 16), strides=(16, 16), embed_dim=768, **kwargs
     ):
@@ -306,6 +393,41 @@ class PatchingAndEmbedding(keras.layers.Layer):
 
 @keras.utils.register_keras_serializable(package="keras_cv")
 class ImageEncoder(keras.models.Model):
+    """A ViT image encoder for the segment anything model.
+
+    Args:
+        img_size (int, optional): The size of the input image. Defaults to
+            `1024`.
+        patch_size (int, optional): the patch size to be supplied to the
+            Patching layer to turn input images into a flattened sequence of
+            patches. Defaults to `16`.
+        in_chans (int, optional): The number of channels in the input image.
+            Defaults to `3`.
+        embed_dim (int, optional): The latent dimensionality to be projected
+            into in the output of each stacked windowed transformer encoder.
+            Defaults to `1280`.
+        depth (int, optional): The number of transformer encoder layers to
+            stack in the Vision Transformer. Defaults to `32`.
+        mlp_dim (_type_, optional): The dimensionality of the hidden Dense
+            layer in the transformer MLP head. Defaults to `1280*4`.
+        num_heads (int, optional): the number of heads to use in the
+            `MultiHeadAttentionWithRelativePE` layer of each transformer
+            encoder. Defaults to `16`.
+        out_chans (int, optional): The number of channels (features) in the
+            output (image encodings). Defaults to `256`.
+        use_bias (bool, optional): Whether to use bias to project the keys,
+            queries, and values in the attention layer. Defaults to `True`.
+        use_abs_pos (bool, optional): Whether to add absolute positional
+            embeddings to the output patches. Defaults to `True`.
+        use_rel_pos (bool, optional): Whether to use relative positional
+            emcodings in the attention layer. Defaults to `False`.
+        window_size (int, optional): The size of the window for windowed
+            attention in the transformer encoder blocks. Defaults to `0`.
+        global_attention_indices (list, optional): Indexes for blocks using
+            global attention. Defaults to `[7, 15, 23, 31]`.
+        layer_norm_epsilon (int, optional): The epsilon to use in the layer
+            normalization blocks in transformer encoder. Defaults to `1e-6`.
+    """
     def __init__(
         self,
         img_size=1024,
@@ -381,14 +503,14 @@ class ImageEncoder(keras.models.Model):
                 keras.layers.Conv2D(
                     filters=out_chans, kernel_size=1, use_bias=False
                 ),
-                LayerNormalization(epsilon=layer_norm_epsilon),
+                BatchNormalization(),
                 keras.layers.Conv2D(
                     filters=out_chans,
                     kernel_size=3,
                     padding="same",
                     use_bias=False,
                 ),
-                LayerNormalization(epsilon=layer_norm_epsilon),
+                BatchNormalization(),
             ]
         )
 

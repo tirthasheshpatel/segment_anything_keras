@@ -1,11 +1,29 @@
 from keras_cv.backend import keras
 from keras_cv.backend import ops
 
-from sam_tf.common import LayerNormalization, MLPBlock
+from sam_tf.common import BatchNormalization, MLPBlock
 
 
 @keras.utils.register_keras_serializable(package="keras_cv")
-class AttentionWithDownsampling(keras.layers.Layer):
+class MultiHeadAttentionWithDownsampling(keras.layers.Layer):
+    """Multi-Head Attention with downsampling.
+
+    An attention layer that allows for downscaling the size of the embedding
+    after projection to queries, keys, and values.
+
+    This layer first downscales the features of input queries, keys, and
+    values using a dense layer. Multi-head attention is then performed
+    and the attention map is projected back (upscaled) to the number of
+    input features.
+
+    Args:
+        num_heads (int): Number of attention heads.
+        key_dim (int): Size of each attention head for query, key, and
+            value.
+        downsample_rate (int, optional): The factor by which to downscale the
+            input features i.e. the input features of size `key_dim` are
+            projected down to `key_dim // downsample_rate`.
+    """
     def __init__(self, num_heads, key_dim, downsample_rate=1, **kwargs):
         super().__init__(**kwargs)
         self.num_heads = num_heads
@@ -28,10 +46,7 @@ class AttentionWithDownsampling(keras.layers.Layer):
         self.built = False
 
     def __separate_heads(self, x):
-        B, N, C = x.shape
-        x = ops.reshape(x, (B, N, self.num_heads, C // self.num_heads))
-        return ops.transpose(x, axes=(0, 2, 1, 3))
-
+        B, N, C = x.shape1933
     def __recombine_heads(self, x):
         B, N_H, N_T, C_PH = x.shape
         x = ops.transpose(x, axes=(0, 2, 1, 3))
@@ -79,7 +94,21 @@ class AttentionWithDownsampling(keras.layers.Layer):
 
 
 @keras.utils.register_keras_serializable(package="keras_cv")
-class TwoWayAttention(keras.layers.Layer):
+class TwoWayMultiHeadAttention(keras.layers.Layer):
+    """Two-way multi-head attention layer.
+
+    Args:
+        num_heads (int): Number of attention heads.
+        key_dim (int): Size of each attention head for query, key, and
+            value.
+        mlp_dim (int): Number of hidden dims to use in the mlp block.
+        skip_first_layer_pe (bool): A boolean indicating whether to skip the
+            first layer positional embeddings.
+        attention_downsample_rate (int, optional): The downsample rate to use
+            in the attention layers. Defaults to 2.
+        activation (str, optional): The activation for the mlp block's output
+            layer. Defaults to "relu".
+    """
     def __init__(
         self,
         num_heads,
@@ -98,11 +127,11 @@ class TwoWayAttention(keras.layers.Layer):
         self.attention_downsample_rate = attention_downsample_rate
         self.activation = activation
 
-        self.self_attention = AttentionWithDownsampling(
+        self.self_attention = MultiHeadAttentionWithDownsampling(
             num_heads=num_heads, key_dim=key_dim
         )
         self.layer_norm1 = keras.layers.LayerNormalization(epsilon=1e-5)
-        self.cross_attention_token_to_image = AttentionWithDownsampling(
+        self.cross_attention_token_to_image = MultiHeadAttentionWithDownsampling(
             num_heads=num_heads,
             key_dim=key_dim,
             downsample_rate=attention_downsample_rate,
@@ -112,7 +141,7 @@ class TwoWayAttention(keras.layers.Layer):
         self.mlp_block = MLPBlock(key_dim * num_heads, mlp_dim, activation)
 
         self.layer_norm3 = keras.layers.LayerNormalization(epsilon=1e-5)
-        self.cross_attention_image_to_token = AttentionWithDownsampling(
+        self.cross_attention_image_to_token = MultiHeadAttentionWithDownsampling(
             num_heads=num_heads,
             key_dim=key_dim,
             downsample_rate=attention_downsample_rate,
@@ -198,6 +227,43 @@ class TwoWayAttention(keras.layers.Layer):
 
 @keras.utils.register_keras_serializable(package="keras_cv")
 class TwoWayTransformer(keras.layers.Layer):
+    """A two-way cross-attention transformer decoder.
+
+    A transformer decoder that attends to an input image using
+    queries whose positional embedding is supplied.
+    
+    The transformer decoder design is shown in [1]_. Each decoder layer
+    performs 4 steps: (1) self-attention on the tokens, (2) cross-attention
+    from tokens (as queries) to the image embedding, (3) a point-wise MLP
+    updates each token, and (4) cross-attention from the image embedding (as
+    queries) to tokens. This last step updates the image embedding with prompt
+    information. Each self/cross-attention and MLP has a residual connection
+    and layer normalization.
+
+    To ensure the decoder has access to critical geometric information the
+    positional encodings are added to the image embedding whenever they
+    participate in an attention layer. Additionally, the entire original
+    prompt tokens (including their positional encodings) are re-added to the
+    updated tokens whenever they participate in an attention layer. This
+    allows for a strong dependence on both the prompt token's geometric
+    location and type.
+
+    Args:
+        depth (int): The depth of the attention blocks (the number
+            of attention blocks to use).
+        embedding_dim (int): The number of features of the input image and
+            point embeddings.
+        num_heads (int): Number of heads to use in the attention layers.
+        mlp_dim (int): The number of units in the hidden layer of the MLP
+            block used in the attention layers.
+        activation (str, optional): The activation of the MLP block's output
+            layer used in the attention layers. Defaults to "relu".
+        attention_downsample_rate (int, optional): The downsample rate of the
+            attention layers. Defaults to 2.
+
+    References:
+        - [Segment Anything](https://arxiv.org/abs/2304.02643)
+    """
     def __init__(
         self,
         depth,
@@ -218,7 +284,7 @@ class TwoWayTransformer(keras.layers.Layer):
         self.layers = []
         for i in range(depth):
             self.layers.append(
-                TwoWayAttention(
+                TwoWayMultiHeadAttention(
                     num_heads=num_heads,
                     key_dim=embedding_dim // num_heads,
                     mlp_dim=mlp_dim,
@@ -227,7 +293,7 @@ class TwoWayTransformer(keras.layers.Layer):
                     activation=activation,
                 )
             )
-        self.final_attention_token_to_image = AttentionWithDownsampling(
+        self.final_attention_token_to_image = MultiHeadAttentionWithDownsampling(
             num_heads=num_heads,
             key_dim=embedding_dim // num_heads,
             downsample_rate=attention_downsample_rate,
@@ -300,6 +366,14 @@ class TwoWayTransformer(keras.layers.Layer):
 
 @keras.utils.register_keras_serializable(package="keras_cv")
 class MLP(keras.layers.Layer):
+    """A MLP block with architecture
+    `input_dim -> [hidden_dim] * (num_layers - 1) -> output_dim`.
+
+    Args:
+        hidden_dim (int): The number of units in the hidden layers.
+        output_dim (int): The number of units in the output layer.
+        num_layers (int): The total number of dense layers to use.
+    """
     def __init__(self, hidden_dim, output_dim, num_layers, **kwargs):
         super().__init__(**kwargs)
         self.hidden_dim = hidden_dim
@@ -337,6 +411,42 @@ class MLP(keras.layers.Layer):
 
 @keras.utils.register_keras_serializable(package="keras_cv")
 class MaskDecoder(keras.models.Model):
+    """Mask decoder for the segment anything model.
+
+    This lightweight module efficiently maps the image embedding and a set of
+    prompt embeddings to an output mask. Before applying the transformer
+    decoder, the layer first inserts into the set of prompt embeddings a
+    learned output token embedding that will be used at the decoder's output.
+    For simplicity, these embeddings (not including the image embedding) are
+    collectively called "tokens".
+
+    The image embeddings, positional image embeddings, and tokens are passed
+    through a transformer decoder. After running the decoder, the layer
+    upsamples the updated image embedding by 4x with two transposed
+    convolutional layers (now it's downscaled 4x relative to the input
+    image). Then, the tokens attend once more to the image embedding and
+    the updated output token embedding are passed to a small 3-layer MLP that
+    outputs a vector matching the channel dimension of the upscaled image
+    embedding. Finally, a mask is predicted with a spatially point-wise
+    product between the upscaled image embedding and the MLP's output.
+
+    Args:
+        transformer_dim (int): The number of input features to the transformer
+            decoder.
+        transformer (keras.layers.Layer): A transformer decoder.
+        num_multimask_outputs (int): Number of multimask outputs. The model
+            would generate these many extra masks when `multimask_output` is
+            `True`.
+        iou_head_depth (int): The depth of the dense net used to predict the
+            IoU confidence score.
+        iou_head_hidden_dim (int): The number of units in the hidden layers
+            used in the dense net to predict the IoU confidence score.
+        activation (str, optional): Activation to use in the mask upscaler
+            network. Defaults to "gelu".
+
+    References:
+        - [Segment Anything](https://arxiv.org/abs/2304.02643)
+    """
     def __init__(
         self,
         transformer_dim,
@@ -366,7 +476,7 @@ class MaskDecoder(keras.models.Model):
                 keras.layers.Conv2DTranspose(
                     transformer_dim // 4, kernel_size=2, strides=2
                 ),
-                LayerNormalization(),
+                BatchNormalization(),
                 keras.layers.Activation(activation),
                 keras.layers.Conv2DTranspose(
                     transformer_dim // 8, kernel_size=2, strides=2

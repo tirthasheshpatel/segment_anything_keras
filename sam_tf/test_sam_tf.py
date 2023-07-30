@@ -11,7 +11,7 @@ from sam_tf.image_encoder import (
     WindowedTransformerEncoder,
 )
 from sam_tf.prompt_encoder import PromptEncoder
-from sam_tf.mask_decoder import MaskDecoder, TwoWayAttention, TwoWayTransformer
+from sam_tf.mask_decoder import MaskDecoder, TwoWayMultiHeadAttention, TwoWayTransformer
 
 
 keras.src.utils.traceback_utils.disable_traceback_filtering()
@@ -158,7 +158,7 @@ class TestSAM:
         np.testing.assert_equal(sparse_embeddings, sparse_embeddings_loaded)
         np.testing.assert_equal(dense_embeddings, dense_embeddings_loaded)
 
-    def test_two_way_attention(self):
+    def test_two_way_multi_head_attention(self):
         (
             prompt_encoder,
             points,
@@ -172,7 +172,7 @@ class TestSAM:
             points=points, labels=labels, box=box, mask=input_mask
         )
 
-        two_way_attention = TwoWayAttention(
+        two_way_attention = TwoWayMultiHeadAttention(
             num_heads=8,
             key_dim=256 // 8,
             mlp_dim=2048,

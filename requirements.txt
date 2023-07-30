@@ -9,3 +9,4 @@ jax
 keras-core
 keras-cv
 pycocotools
+opencv-python

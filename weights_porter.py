@@ -1,4 +1,4 @@
-def port_weights_huge(mb_model, torch_model):
+def port_weights(mb_model, torch_model):
     mb_model.prompt_encoder.background_point_embed.set_weights(
         [
             torch_model.prompt_encoder.point_embeddings[0]
@@ -205,7 +205,9 @@ def port_weights_huge(mb_model, torch_model):
         ].attention.set_weights(
             [
                 x.cpu().detach().numpy().T
-                if x.shape[-1] == 1280
+                # This is kind of a hack but we won't need this script once we
+                # publish the Keras models's weights.
+                if x.shape[-1] == mb_model.image_encoder.embed_dim
                 else x.cpu().detach().numpy()
                 for x in torch_model.image_encoder.blocks[i].attn.parameters()
             ]

@@ -1,5 +1,6 @@
 import numpy as np
 from keras_cv.backend import ops
+from PIL import Image
 
 
 # Re-implementation of https://github.com/facebookresearch/segment-anything/blob/main/segment_anything/utils/transforms.py#L16 in TensorFlow
@@ -8,9 +9,8 @@ class ResizeLongestSide:
         self.target_length = target_length
 
     def apply_image(self, image):
-        from torchvision.transforms.functional import resize, to_pil_image
         target_size = self.get_preprocess_shape(image.shape[0], image.shape[1])
-        return np.array(resize(to_pil_image(image), target_size))
+        return np.array(Image.fromarray(image).resize(target_size[::-1], resample=Image.Resampling.BILINEAR))
 
     def apply_coords(self, coords, original_size):
         old_h, old_w = original_size

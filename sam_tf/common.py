@@ -25,7 +25,6 @@ class MLPBlock(keras.layers.Layer):
 
         self.built = False
 
-    def build(self, input_shape=None):
         self.dense_layer1.build([self.embedding_dim])
         self.dense_layer2.build([self.mlp_dim])
 

@@ -148,6 +148,14 @@ class MultiHeadAttentionWithRelativePE(keras.layers.Layer):
                 initializer="zeros",
                 trainable=True,
             )
+            
+        self.qkv.build([self.key_dim * self.num_heads])
+        self.projection.build([self.key_dim * self.num_heads])
+
+        self.built = True
+        
+    def compute_output_shape(self, input_shape):
+        return input_shape
 
     def call(self, x):
         B, H, W, C = x.shape
@@ -311,6 +319,14 @@ class WindowedTransformerEncoder(keras.layers.Layer):
             else (window_size, window_size),
         )
         self.mlp_block = MLPBlock(project_dim, mlp_dim, activation)
+        
+        self.layer_norm1.build([None, None, None, self.project_dim])
+        self.layer_norm2.build([None, None, None, self.project_dim])
+        
+        self.built = True
+        
+    def compute_output_shape(self, input_shape):
+        return input_shape
 
     def call(self, x):
         shortcut = x
@@ -374,6 +390,15 @@ class PatchingAndEmbedding(keras.layers.Layer):
         self.kernel_size = kernel_size
         self.strides = strides
         self.embed_dim = embed_dim
+        
+        self.built = False
+
+    def build(self, input_shape):
+        self.projection.build(input_shape)
+        self.built = True
+
+    def compute_output_shape(self, input_shape):
+        return self.projection.compute_output_shape(input_shape)
 
     def call(self, x):
         x = self.projection(x)
@@ -495,9 +520,6 @@ class ImageEncoder(keras.models.Model):
                 input_size=(img_size // patch_size, img_size // patch_size),
             )
             self.transformer_blocks.append(block)
-        self.transformer_blocks = keras.models.Sequential(
-            self.transformer_blocks
-        )
         self.bottleneck = keras.models.Sequential(
             [
                 keras.layers.Conv2D(
@@ -513,13 +535,24 @@ class ImageEncoder(keras.models.Model):
                 keras.layers.LayerNormalization(epsilon=1e-6),
             ]
         )
+        
+        self.patch_embed.build([None, self.img_size, self.img_size, self.in_chans])
+        self.bottleneck.build([
+            None,
+            self.img_size // self.patch_size,
+            self.img_size // self.patch_size,
+            self.embed_dim
+        ])
+
+        self.built = True
 
     def call(self, x):
         B, _, _, _ = x.shape
         x = self.patch_embed(x)
         if self.pos_embed is not None:
             x = x + self.pos_embed
-        x = self.transformer_blocks(x)
+        for block in self.transformer_blocks:
+            x = block(x)
         return self.bottleneck(x)
 
     def get_config(self):

@@ -1,5 +1,6 @@
 import os
 import tempfile
+import pytest
 import numpy as np
 
 from keras_cv.backend import keras
@@ -44,6 +45,7 @@ class TestSAM:
         assert x_out.shape == (1, 64, 64, 1280)
         assert np.all(x_out == 1)
 
+    @pytest.mark.extra_large
     def test_image_encoder(self):
         image_encoder = ImageEncoder(
             img_size=1024,
@@ -166,7 +168,7 @@ class TestSAM:
             box,
             input_mask,
         ) = self.get_points_labels_box_mask(1)
-        image_embeddings = np.random.randn(1, 64, 64, 256)
+        image_embeddings = np.random.randn(1, 64, 64, 256).astype(np.float32)
 
         sparse_embeddings, _ = prompt_encoder(
             points=points, labels=labels, box=box, mask=input_mask

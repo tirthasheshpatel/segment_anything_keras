@@ -24,6 +24,7 @@ class MultiHeadAttentionWithDownsampling(keras.layers.Layer):
             input features i.e. the input features of size `key_dim` are
             projected down to `key_dim // downsample_rate`.
     """
+
     def __init__(self, num_heads, key_dim, downsample_rate=1, **kwargs):
         super().__init__(**kwargs)
         self.num_heads = num_heads
@@ -43,7 +44,12 @@ class MultiHeadAttentionWithDownsampling(keras.layers.Layer):
         # Upsample
         self.out_proj = keras.layers.Dense(self.key_dim * self.num_heads)
 
-        self.built = False
+        self.query_proj.build([self.num_heads * self.key_dim])
+        self.key_proj.build([self.num_heads * self.key_dim])
+        self.value_proj.build([self.num_heads * self.key_dim])
+        self.out_proj.build([self.internal_dims * self.num_heads])
+
+        self.built = True
 
     def __separate_heads(self, x):
         B, N, C = x.shape
@@ -54,14 +60,6 @@ class MultiHeadAttentionWithDownsampling(keras.layers.Layer):
         B, N_H, N_T, C_PH = x.shape
         x = ops.transpose(x, axes=(0, 2, 1, 3))
         return ops.reshape(x, (B, N_T, N_H * C_PH))
-
-    def build(self, query_shape, value_shape, key_shape):
-        self.query_proj.build(query_shape)
-        self.key_proj.build(key_shape)
-        self.value_proj.build(value_shape)
-        self.out_proj.build([self.internal_dims * self.num_heads])
-
-        self.built = True
 
     def call(self, query, value, key):
         query = self.query_proj(query)
@@ -112,6 +110,7 @@ class TwoWayMultiHeadAttention(keras.layers.Layer):
         activation (str, optional): The activation for the mlp block's output
             layer. Defaults to "relu".
     """
+
     def __init__(
         self,
         num_heads,
@@ -134,46 +133,31 @@ class TwoWayMultiHeadAttention(keras.layers.Layer):
             num_heads=num_heads, key_dim=key_dim
         )
         self.layer_norm1 = keras.layers.LayerNormalization(epsilon=1e-5)
-        self.cross_attention_token_to_image = MultiHeadAttentionWithDownsampling(
-            num_heads=num_heads,
-            key_dim=key_dim,
-            downsample_rate=attention_downsample_rate,
+        self.cross_attention_token_to_image = (
+            MultiHeadAttentionWithDownsampling(
+                num_heads=num_heads,
+                key_dim=key_dim,
+                downsample_rate=attention_downsample_rate,
+            )
         )
         self.layer_norm2 = keras.layers.LayerNormalization(epsilon=1e-5)
 
         self.mlp_block = MLPBlock(key_dim * num_heads, mlp_dim, activation)
 
         self.layer_norm3 = keras.layers.LayerNormalization(epsilon=1e-5)
-        self.cross_attention_image_to_token = MultiHeadAttentionWithDownsampling(
-            num_heads=num_heads,
-            key_dim=key_dim,
-            downsample_rate=attention_downsample_rate,
+        self.cross_attention_image_to_token = (
+            MultiHeadAttentionWithDownsampling(
+                num_heads=num_heads,
+                key_dim=key_dim,
+                downsample_rate=attention_downsample_rate,
+            )
         )
         self.layer_norm4 = keras.layers.LayerNormalization(epsilon=1e-5)
 
-        self.built = False
-
-    def build(self, queries_shape, keys_shape, query_pe_shape, key_pe_shape):
-        self.self_attention.build(
-            query_shape=queries_shape,
-            value_shape=queries_shape,
-            key_shape=queries_shape,
-        )
-        self.layer_norm1.build(queries_shape)
-        self.cross_attention_token_to_image.build(
-            query_shape=queries_shape,
-            key_shape=keys_shape,
-            value_shape=keys_shape,
-        )
-        self.layer_norm2.build(queries_shape)
-        self.mlp_block.build(queries_shape)
-        self.layer_norm3.build(queries_shape)
-        self.cross_attention_image_to_token.build(
-            query_shape=keys_shape,
-            key_shape=queries_shape,
-            value_shape=queries_shape,
-        )
-        self.layer_norm4.build(keys_shape)
+        self.layer_norm1.build([self.num_heads * self.key_dim])
+        self.layer_norm2.build([self.num_heads * self.key_dim])
+        self.layer_norm3.build([self.num_heads * self.key_dim])
+        self.layer_norm4.build([self.num_heads * self.key_dim])
 
         self.built = True
 
@@ -234,7 +218,7 @@ class TwoWayTransformer(keras.layers.Layer):
 
     A transformer decoder that attends to an input image using
     queries whose positional embedding is supplied.
-    
+
     The transformer decoder design is shown in [1]_. Each decoder layer
     performs 4 steps: (1) self-attention on the tokens, (2) cross-attention
     from tokens (as queries) to the image embedding, (3) a point-wise MLP
@@ -267,6 +251,7 @@ class TwoWayTransformer(keras.layers.Layer):
     References:
         - [Segment Anything](https://arxiv.org/abs/2304.02643)
     """
+
     def __init__(
         self,
         depth,
@@ -296,33 +281,16 @@ class TwoWayTransformer(keras.layers.Layer):
                     activation=activation,
                 )
             )
-        self.final_attention_token_to_image = MultiHeadAttentionWithDownsampling(
-            num_heads=num_heads,
-            key_dim=embedding_dim // num_heads,
-            downsample_rate=attention_downsample_rate,
+        self.final_attention_token_to_image = (
+            MultiHeadAttentionWithDownsampling(
+                num_heads=num_heads,
+                key_dim=embedding_dim // num_heads,
+                downsample_rate=attention_downsample_rate,
+            )
         )
         self.final_layer_norm = keras.layers.LayerNormalization(epsilon=1e-5)
 
-        self.built = False
-
-    def build(
-        self, image_embedding_shape, image_pe_shape, point_embedding_shape
-    ):
-        B, H, W, C = image_embedding_shape
-        image_embedding_shape = [B, H * W, C]
-        for layer in self.layers:
-            layer.build(
-                queries_shape=point_embedding_shape,
-                keys_shape=image_embedding_shape,
-                query_pe_shape=point_embedding_shape,
-                key_pe_shape=image_embedding_shape,
-            )
-        self.final_attention_token_to_image.build(
-            query_shape=point_embedding_shape,
-            key_shape=image_embedding_shape,
-            value_shape=image_embedding_shape,
-        )
-        self.final_layer_norm.build(point_embedding_shape)
+        self.final_layer_norm.build([self.embedding_dim])
 
         self.built = True
 
@@ -500,33 +468,6 @@ class MaskDecoder(keras.models.Model):
         self.iou_token.build(None)
         self.mask_tokens.build(None)
 
-        self.built = False
-
-    def build(
-        self,
-        image_embeddings_shape,
-        image_pe_shape,
-        sparse_prompt_embeddings_shape,
-        dense_prompt_embeddings_shape,
-        *args,
-        **kwargs,
-    ):
-        transformer_image_embed_shape = [
-            None,
-            image_embeddings_shape[1],
-            image_embeddings_shape[2],
-            image_embeddings_shape[3],
-        ]
-        tokens_shape = [
-            None,
-            1 + self.num_mask_tokens + sparse_prompt_embeddings_shape[1],
-            self.transformer_dim,
-        ]
-        self.transformer.build(
-            image_embedding_shape=transformer_image_embed_shape,
-            image_pe_shape=transformer_image_embed_shape,
-            point_embedding_shape=tokens_shape,
-        )
         self.output_upscaling.build([None, None, None, self.transformer_dim])
 
         for mlp in self.output_hypernetworks_mlps:

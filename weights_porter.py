@@ -183,8 +183,8 @@ def port_weights(mb_model, torch_model):
     mb_model.image_encoder.pos_embed.assign(
         torch_model.image_encoder.pos_embed.cpu().detach().numpy()
     )
-    for i in range(32):
-        mb_model.image_encoder.transformer_blocks.layers[
+    for block in range(mb_model.image_encoder.transformer_blocks):
+        block.layers[
             i
         ].layer_norm1.set_weights(
             [
@@ -192,7 +192,7 @@ def port_weights(mb_model, torch_model):
                 for x in torch_model.image_encoder.blocks[i].norm1.parameters()
             ]
         )
-        mb_model.image_encoder.transformer_blocks.layers[
+        block.layers[
             i
         ].layer_norm2.set_weights(
             [
@@ -200,7 +200,7 @@ def port_weights(mb_model, torch_model):
                 for x in torch_model.image_encoder.blocks[i].norm2.parameters()
             ]
         )
-        mb_model.image_encoder.transformer_blocks.layers[
+        block.layers[
             i
         ].attention.set_weights(
             [
@@ -212,7 +212,7 @@ def port_weights(mb_model, torch_model):
                 for x in torch_model.image_encoder.blocks[i].attn.parameters()
             ]
         )
-        mb_model.image_encoder.transformer_blocks.layers[
+        block.layers[
             i
         ].mlp_block.set_weights(
             [

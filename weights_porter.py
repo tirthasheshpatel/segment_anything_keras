@@ -183,41 +183,33 @@ def port_weights(mb_model, torch_model):
     mb_model.image_encoder.pos_embed.assign(
         torch_model.image_encoder.pos_embed.cpu().detach().numpy()
     )
-    for block in range(mb_model.image_encoder.transformer_blocks):
-        block.layers[
-            i
-        ].layer_norm1.set_weights(
+    for (block_mb, block_torch) in zip(mb_model.image_encoder.transformer_blocks, torch_model.image_encoder.blocks):
+        block_mb.layer_norm1.set_weights(
             [
                 x.cpu().detach().numpy()
-                for x in torch_model.image_encoder.blocks[i].norm1.parameters()
+                for x in block_torch.norm1.parameters()
             ]
         )
-        block.layers[
-            i
-        ].layer_norm2.set_weights(
+        block_mb.layer_norm2.set_weights(
             [
                 x.cpu().detach().numpy()
-                for x in torch_model.image_encoder.blocks[i].norm2.parameters()
+                for x in block_torch.norm2.parameters()
             ]
         )
-        block.layers[
-            i
-        ].attention.set_weights(
+        block_mb.attention.set_weights(
             [
                 x.cpu().detach().numpy().T
                 # This is kind of a hack but we won't need this script once we
                 # publish the Keras models's weights.
                 if x.shape[-1] == mb_model.image_encoder.embed_dim
                 else x.cpu().detach().numpy()
-                for x in torch_model.image_encoder.blocks[i].attn.parameters()
+                for x in block_torch.attn.parameters()
             ]
         )
-        block.layers[
-            i
-        ].mlp_block.set_weights(
+        block_mb.mlp_block.set_weights(
             [
                 x.cpu().detach().numpy().T
-                for x in torch_model.image_encoder.blocks[i].mlp.parameters()
+                for x in block_torch.mlp.parameters()
             ]
         )
     mb_model.image_encoder.bottleneck.set_weights(

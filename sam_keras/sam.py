@@ -1,9 +1,16 @@
+# Author: Tirth Patel (tirthasheshpatel@gmail.com)
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
+
 import numpy as np
 from keras_cv.backend import ops
 from PIL import Image
 
 
-# Re-implementation of https://github.com/facebookresearch/segment-anything/blob/main/segment_anything/utils/transforms.py#L16 in TensorFlow
 class ResizeLongestSide:
     def __init__(self, target_length):
         self.target_length = target_length

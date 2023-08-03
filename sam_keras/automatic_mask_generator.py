@@ -9,8 +9,8 @@ from keras_cv.layers.object_detection.non_max_suppression import non_max_suppres
 from keras_cv.backend import ops
 from keras_cv.backend import keras
 
-from sam_tf.sam import SegmentAnythingModel
-from sam_tf.amg_utils import (
+from sam_keras.sam import SegmentAnythingModel
+from sam_keras.amg_utils import (
     MaskData,
     area_from_rle,
     batch_iterator,

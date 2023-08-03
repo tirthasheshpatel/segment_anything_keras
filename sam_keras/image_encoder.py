@@ -1,7 +1,15 @@
+# Author: Tirth Patel (tirthasheshpatel@gmail.com)
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
+
 from keras_cv.backend import keras
 from keras_cv.backend import ops
 
-from sam_tf.common import MLPBlock
+from sam_keras.common import MLPBlock
 
 
 def get_rel_pos(query_size, key_size, rel_pos):

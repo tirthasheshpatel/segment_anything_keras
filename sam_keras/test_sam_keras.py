@@ -1,3 +1,11 @@
+# Author: Tirth Patel (tirthasheshpatel@gmail.com)
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
+
 import os
 import tempfile
 import pytest
@@ -6,13 +14,13 @@ import numpy as np
 from keras_cv.backend import keras
 from keras_cv.backend import ops
 
-from sam_tf.image_encoder import (
+from sam_keras.image_encoder import (
     ImageEncoder,
     MultiHeadAttentionWithRelativePE,
     WindowedTransformerEncoder,
 )
-from sam_tf.prompt_encoder import PromptEncoder
-from sam_tf.mask_decoder import MaskDecoder, TwoWayMultiHeadAttention, TwoWayTransformer
+from sam_keras.prompt_encoder import PromptEncoder
+from sam_keras.mask_decoder import MaskDecoder, TwoWayMultiHeadAttention, TwoWayTransformer
 
 
 keras.src.utils.traceback_utils.disable_traceback_filtering()

@@ -212,6 +212,7 @@ class SAMAutomaticMaskGenerator:
         if len(crop_boxes) > 1:
             # Prefer masks from smaller crops
             scores = 1 / _box_area(data["crop_boxes"])
+            scores = ops.cast(scores, "float32")
             if keras.backend.backend() == "torch":
                 from torchvision.ops import batched_nms
                 keep_by_nms = batched_nms(
@@ -229,7 +230,6 @@ class SAMAutomaticMaskGenerator:
                     max_output_size=100,
                     iou_threshold=self.crop_nms_thresh
                 )
-                # keep_by_nms = keep_by_nms[0]
                 del tf
             else:
                 keep_by_nms, _ = non_max_suppression(
@@ -287,7 +287,6 @@ class SAMAutomaticMaskGenerator:
                 max_output_size=100,
                 iou_threshold=self.box_nms_thresh
             )
-            # keep_by_nms = keep_by_nms[0]
             del tf
         else:
             keep_by_nms, _ = non_max_suppression(
@@ -396,12 +395,13 @@ class SAMAutomaticMaskGenerator:
 
         # Recalculate boxes and remove any new duplicates
         masks = ops.concatenate(new_masks, axis=0)
+        scores = ops.convert_to_tensor(scores, "float32")
         boxes = batched_mask_to_box(masks)
         if keras.backend.backend() == "torch":
             from torchvision.ops import batched_nms
             keep_by_nms = batched_nms(
                 ops.cast(boxes, "float32"),
-                ops.convert_to_tensor(scores),
+                scores,
                 ops.zeros_like(boxes[:, 0]),  # categories
                 iou_threshold=nms_thresh,
             )
@@ -410,16 +410,15 @@ class SAMAutomaticMaskGenerator:
             import tensorflow as tf
             keep_by_nms, _ = tf.image.non_max_suppression_padded(
                 boxes=box_xyxy_to_yxyx(ops.cast(boxes, "float32")),
-                scores=ops.convert_to_tensor(scores),
+                scores=scores,
                 max_output_size=100,
                 iou_threshold=nms_thresh
             )
-            # keep_by_nms = keep_by_nms[0]
             del tf
         else:
             keep_by_nms, _ = non_max_suppression(
                 boxes=box_xyxy_to_yxyx(ops.cast(boxes, "float32")),
-                scores=ops.convert_to_tensor(scores),
+                scores=scores,
                 max_output_size=100,
                 iou_threshold=nms_thresh
             )

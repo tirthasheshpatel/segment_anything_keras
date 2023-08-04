@@ -10,6 +10,7 @@ from keras_cv.backend import ops
 from keras_cv.backend import keras
 
 from sam_keras.sam import SegmentAnythingModel
+from sam_keras.utils import _torch_no_grad
 from sam_keras.amg_utils import (
     MaskData,
     area_from_rle,
@@ -136,6 +137,7 @@ class SAMAutomaticMaskGenerator:
         self.min_mask_region_area = min_mask_region_area
         self.output_mode = output_mode
 
+    @_torch_no_grad
     def generate(self, image):
         """
         Generates masks for the given image.

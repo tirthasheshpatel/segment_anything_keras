@@ -10,6 +10,8 @@ import numpy as np
 from keras_cv.backend import ops
 from PIL import Image
 
+from sam_keras.utils import _torch_no_grad
+
 
 class ResizeLongestSide:
     def __init__(self, target_length):
@@ -95,6 +97,7 @@ class SegmentAnythingModel:
         self.features = self.image_encoder(input_image)
         self.is_image_set = True
 
+    @_torch_no_grad
     def predict(self, batched_input, multimask_output=True, return_logits=True):
         if isinstance(batched_input, list):
             images = ops.concatenate(

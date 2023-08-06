@@ -431,7 +431,7 @@ class SAMAutomaticMaskGenerator:
             if scores[i_mask] == 0.0:
                 mask_torch = masks[i_mask][None, ...]
                 mask_data["rles"][i_mask] = mask_to_rle_tensor(mask_torch)[0]
-                mask_data["boxes"][i_mask] = boxes[i_mask]  # update res directly
+                mask_data["boxes"][i_mask] = ops.convert_to_numpy(boxes[i_mask])  # update res directly
         mask_data.filter(keep_by_nms)
 
         return mask_data

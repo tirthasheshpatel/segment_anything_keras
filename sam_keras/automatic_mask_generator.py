@@ -234,13 +234,13 @@ class SAMAutomaticMaskGenerator:
                 )
                 del tf
             else:
-                keep_by_nms, _ = non_max_suppression(
+                keep_by_nms, num_valid = non_max_suppression(
                     boxes=box_xyxy_to_yxyx(ops.cast(data["boxes"], "float32")),
                     scores=scores,
                     max_output_size=100,
                     iou_threshold=self.crop_nms_thresh
                 )
-                keep_by_nms = keep_by_nms[0]
+                keep_by_nms = keep_by_nms[0][:num_valid]
             data.filter(keep_by_nms)
 
         data.to_numpy()
@@ -291,13 +291,13 @@ class SAMAutomaticMaskGenerator:
             )
             del tf
         else:
-            keep_by_nms, _ = non_max_suppression(
+            keep_by_nms, num_valid = non_max_suppression(
                 boxes=box_xyxy_to_yxyx(ops.cast(data["boxes"], "float32")),
                 scores=data["iou_preds"],
                 max_output_size=100,
                 iou_threshold=self.box_nms_thresh
             )
-            keep_by_nms = keep_by_nms[0]
+            keep_by_nms = keep_by_nms[0][:num_valid]
         data.filter(keep_by_nms)
 
         # Return to the original image frame
@@ -418,13 +418,13 @@ class SAMAutomaticMaskGenerator:
             )
             del tf
         else:
-            keep_by_nms, _ = non_max_suppression(
+            keep_by_nms, num_valid = non_max_suppression(
                 boxes=box_xyxy_to_yxyx(ops.cast(boxes, "float32")),
                 scores=scores,
                 max_output_size=100,
                 iou_threshold=nms_thresh
             )
-            keep_by_nms = keep_by_nms[0]
+            keep_by_nms = keep_by_nms[0][:num_valid]
 
         # Only recalculate RLEs for masks that have changed
         for i_mask in keep_by_nms:

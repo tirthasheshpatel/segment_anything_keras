@@ -144,30 +144,31 @@ def mask_to_rle_tensor(tensor):
     Encodes masks to an uncompressed RLE, in the format expected by
     pycoco tools.
     """
+    tensor = ops.convert_to_numpy(tensor)
     # Put in fortran order and flatten h,w
     b, h, w = tensor.shape
-    tensor = ops.reshape(
-        ops.transpose(tensor, axes=(0, 2, 1)), (b, w * h)
+    tensor = np.reshape(
+        np.transpose(tensor, axes=(0, 2, 1)), (b, w * h)
     )
 
     # Compute change indices
     diff = tensor[:, 1:] ^ tensor[:, :-1]
-    change_indices = ops.stack(ops.nonzero(diff), 1)
+    change_indices = np.stack(np.nonzero(diff), 1)
 
     # Encode run length
     out = []
     for i in range(b):
-        cur_idxs = change_indices[change_indices[:, 0] == i][:, 1]
-        cur_idxs = ops.concatenate(
+        cur_idxs = change_indices[change_indices[:, 0] == i, 1]
+        cur_idxs = np.concatenate(
             [
-                ops.convert_to_tensor([0], dtype=cur_idxs.dtype),
+                np.array([0], dtype=cur_idxs.dtype),
                 cur_idxs + 1,
-                ops.convert_to_tensor([h * w], dtype=cur_idxs.dtype),
+                np.array([h * w], dtype=cur_idxs.dtype),
             ]
         )
         btw_idxs = cur_idxs[1:] - cur_idxs[:-1]
         counts = [] if tensor[i, 0] == False else [0]
-        counts.extend(list(ops.convert_to_numpy(btw_idxs)))
+        counts.extend(list(btw_idxs))
         out.append({"size": [h, w], "counts": counts})
     return out
 

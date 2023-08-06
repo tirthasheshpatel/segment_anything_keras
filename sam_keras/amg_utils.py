@@ -50,13 +50,13 @@ class MaskData:
             if v is None:
                 self._stats[k] = None
             elif ops.is_tensor(v):
-                if keep.dtype == "bool":
+                if "bool" in str(keep.dtype):
                     self._stats[k] = v[keep]
                 else:
                     self._stats[k] = ops.take(v, keep, 0)
             elif isinstance(v, np.ndarray):
                 self._stats[k] = v[ops.convert_to_numpy(keep)]
-            elif isinstance(v, list) and keep.dtype == "bool":
+            elif isinstance(v, list) and "bool" in str(keep.dtype):
                 self._stats[k] = [a for i, a in enumerate(v) if keep[i]]
             elif isinstance(v, list):
                 self._stats[k] = [v[i] for i in keep]

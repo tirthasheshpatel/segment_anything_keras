@@ -52,10 +52,10 @@ class MultiHeadAttentionWithDownsampling(keras.layers.Layer):
         # Upsample
         self.out_proj = keras.layers.Dense(self.key_dim * self.num_heads)
 
-        self.query_proj.build([self.num_heads * self.key_dim])
-        self.key_proj.build([self.num_heads * self.key_dim])
-        self.value_proj.build([self.num_heads * self.key_dim])
-        self.out_proj.build([self.internal_dims * self.num_heads])
+        self.query_proj.build([None, None, self.num_heads * self.key_dim])
+        self.key_proj.build([None, None, self.num_heads * self.key_dim])
+        self.value_proj.build([None, None, self.num_heads * self.key_dim])
+        self.out_proj.build([None, None, self.internal_dims * self.num_heads])
 
         self.built = True
 
@@ -162,15 +162,14 @@ class TwoWayMultiHeadAttention(keras.layers.Layer):
         )
         self.layer_norm4 = keras.layers.LayerNormalization(epsilon=1e-5)
 
-        self.layer_norm1.build([self.num_heads * self.key_dim])
-        self.layer_norm2.build([self.num_heads * self.key_dim])
-        self.layer_norm3.build([self.num_heads * self.key_dim])
-        self.layer_norm4.build([self.num_heads * self.key_dim])
+        self.layer_norm1.build([None, None, self.num_heads * self.key_dim])
+        self.layer_norm2.build([None, None, self.num_heads * self.key_dim])
+        self.layer_norm3.build([None, None, self.num_heads * self.key_dim])
+        self.layer_norm4.build([None, None, self.num_heads * self.key_dim])
 
         self.built = True
 
     def call(self, queries, keys, query_pe, key_pe):
-        # print("Actual queries_shape:", queries.shape)
         if self.skip_first_layer_pe:
             queries = self.self_attention(
                 query=queries, value=queries, key=queries
@@ -298,7 +297,7 @@ class TwoWayTransformer(keras.layers.Layer):
         )
         self.final_layer_norm = keras.layers.LayerNormalization(epsilon=1e-5)
 
-        self.final_layer_norm.build([self.embedding_dim])
+        self.final_layer_norm.build([None, None, self.embedding_dim])
 
         self.built = True
 
@@ -388,7 +387,7 @@ class MLP(keras.layers.Layer):
         return config
 
 
-@keras.utils.register_keras_serializable(package="keras_cv")
+@keras.utils.register_keras_serializable(package="keras_cv.models")
 class MaskDecoder(keras.models.Model):
     """Mask decoder for the segment anything model.
 

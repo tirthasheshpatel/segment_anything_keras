@@ -11,3 +11,4 @@ from sam_keras.image_encoder import ImageEncoder
 from sam_keras.prompt_encoder import PromptEncoder
 from sam_keras.sam import SegmentAnythingModel
 from sam_keras.automatic_mask_generator import SAMAutomaticMaskGenerator
+from sam_keras.weights_porter import port_weights

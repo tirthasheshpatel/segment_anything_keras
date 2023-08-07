@@ -424,7 +424,7 @@ class PatchingAndEmbedding(keras.layers.Layer):
         return config
 
 
-@keras.utils.register_keras_serializable(package="keras_cv")
+@keras.utils.register_keras_serializable(package="keras_cv.models")
 class ImageEncoder(keras.models.Model):
     """A ViT image encoder for the segment anything model.
 

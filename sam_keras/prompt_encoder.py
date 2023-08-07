@@ -89,7 +89,7 @@ class RandomFrequencyPositionalEmbeddings(keras.layers.Layer):
         return config
 
 
-@keras.saving.register_keras_serializable(package="keras_cv")
+@keras.saving.register_keras_serializable(package="keras_cv.models")
 class PromptEncoder(keras.models.Model):
     """Prompt Encoder for the segment anything model.
 

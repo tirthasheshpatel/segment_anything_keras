@@ -7,6 +7,9 @@
 # LICENSE file in the root directory of this source tree.
 
 def port_weights(mb_model, torch_model):
+    """Port weights of the PyTorch model to the Keras Core model.
+    Both models must be defined the same way."""
+
     mb_model.prompt_encoder.background_point_embed.set_weights(
         [
             torch_model.prompt_encoder.point_embeddings[0]

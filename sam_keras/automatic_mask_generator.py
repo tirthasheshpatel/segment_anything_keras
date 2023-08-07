@@ -7,9 +7,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
-from keras_cv.layers.object_detection.non_max_suppression import non_max_suppression
 from keras_cv.backend import ops
 from keras_cv.backend import keras
+from keras_cv.backend import multi_backend
+from keras_cv.layers.object_detection.non_max_suppression import non_max_suppression
 
 from sam_keras.utils import _torch_no_grad
 from sam_keras.amg_utils import (
@@ -38,7 +39,7 @@ def _box_area(boxes):
 
 
 def _batched_nms(boxes, scores, iou_threshold, max_output_size):
-    if keras.backend.backend() == "torch":
+    if multi_backend() and keras.backend.backend() == "torch":
         from torchvision.ops import batched_nms
         idx = batched_nms(
             boxes,
@@ -47,7 +48,9 @@ def _batched_nms(boxes, scores, iou_threshold, max_output_size):
             iou_threshold=iou_threshold,
         )
         del batched_nms
-    elif keras.backend.backend() == "tensorflow":
+    elif not multi_backend() or (
+        multi_backend() and keras.backend.backend() == "tensorflow"
+    ):
         import tensorflow as tf
         idx, _ = tf.image.non_max_suppression_padded(
             boxes=box_xyxy_to_yxyx(boxes),

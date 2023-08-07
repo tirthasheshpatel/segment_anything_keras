@@ -13,6 +13,7 @@ import numpy as np
 
 from keras_cv.backend import keras
 from keras_cv.backend import ops
+from keras_cv.backend import multi_backend
 
 from sam_keras.image_encoder import (
     ImageEncoder,
@@ -23,7 +24,12 @@ from sam_keras.prompt_encoder import PromptEncoder
 from sam_keras.mask_decoder import MaskDecoder, TwoWayMultiHeadAttention, TwoWayTransformer
 
 
-keras.src.utils.traceback_utils.disable_traceback_filtering()
+if multi_backend():
+    keras.src.utils.traceback_utils.disable_traceback_filtering()
+else:
+    import tensorflow as tf
+    tf.debugging.disable_traceback_filtering()
+    del tf
 
 
 class TestSAM:
@@ -53,7 +59,7 @@ class TestSAM:
         assert x_out.shape == (1, 64, 64, 1280)
         assert np.all(x_out == 1)
 
-    @pytest.mark.extra_large
+    @pytest.mark.slow
     def test_image_encoder(self):
         image_encoder = ImageEncoder(
             img_size=1024,

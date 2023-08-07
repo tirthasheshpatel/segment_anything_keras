@@ -1,3 +1,5 @@
+# Author: Tirth Patel (tirthasheshpatel@gmail.com)
+
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 
@@ -9,7 +11,6 @@ from keras_cv.layers.object_detection.non_max_suppression import non_max_suppres
 from keras_cv.backend import ops
 from keras_cv.backend import keras
 
-from sam_keras.sam import SegmentAnythingModel
 from sam_keras.utils import _torch_no_grad
 from sam_keras.amg_utils import (
     MaskData,
@@ -36,6 +37,36 @@ def _box_area(boxes):
     return (boxes[..., 2] - boxes[..., 0]) * (boxes[..., 3] - boxes[..., 1])
 
 
+def _batched_nms(boxes, scores, iou_threshold, max_output_size):
+    if keras.backend.backend() == "torch":
+        from torchvision.ops import batched_nms
+        idx = batched_nms(
+            boxes,
+            scores,
+            ops.zeros_like(boxes[:, 0]),  # categories
+            iou_threshold=iou_threshold,
+        )
+        del batched_nms
+    elif keras.backend.backend() == "tensorflow":
+        import tensorflow as tf
+        idx, _ = tf.image.non_max_suppression_padded(
+            boxes=box_xyxy_to_yxyx(boxes),
+            scores=scores,
+            max_output_size=max_output_size,
+            iou_threshold=iou_threshold
+        )
+        del tf
+    else:
+        idx, num_valid = non_max_suppression(
+            boxes=box_xyxy_to_yxyx(boxes),
+            scores=scores,
+            max_output_size=max_output_size,
+            iou_threshold=iou_threshold
+        )
+        idx = idx[0][:num_valid]
+    return idx
+
+
 class SAMAutomaticMaskGenerator:
     def __init__(
         self,
@@ -53,6 +84,7 @@ class SAMAutomaticMaskGenerator:
         point_grids=None,
         min_mask_region_area=0,
         output_mode="binary_mask",
+        max_output_masks=100
     ) -> None:
         """
         Using a SAM model, generates masks for the entire image.
@@ -97,6 +129,7 @@ class SAMAutomaticMaskGenerator:
             'uncompressed_rle', or 'coco_rle'. 'coco_rle' requires pycocotools.
             For large resolutions, 'binary_mask' may consume large amounts of
             memory.
+          max_output_masks (int): Maximum number of masks to generate.
         """
 
         if not ((points_per_side is None) ^ (point_grids is None)):
@@ -124,7 +157,7 @@ class SAMAutomaticMaskGenerator:
         if min_mask_region_area > 0:
             import cv2  # type: ignore # noqa: F401
 
-        self.predictor: SegmentAnythingModel = model
+        self.predictor = model
         self.points_per_batch = points_per_batch
         self.pred_iou_thresh = pred_iou_thresh
         self.stability_score_thresh = stability_score_thresh
@@ -136,6 +169,7 @@ class SAMAutomaticMaskGenerator:
         self.crop_n_points_downscale_factor = crop_n_points_downscale_factor
         self.min_mask_region_area = min_mask_region_area
         self.output_mode = output_mode
+        self.max_output_masks = max_output_masks
 
     @_torch_no_grad
     def generate(self, image):
@@ -198,7 +232,7 @@ class SAMAutomaticMaskGenerator:
 
         return curr_anns
 
-    def _generate_masks(self, image: np.ndarray) -> MaskData:
+    def _generate_masks(self, image):
         orig_size = image.shape[:2]
         crop_boxes, layer_idxs = generate_crop_boxes(
             orig_size, self.crop_n_layers, self.crop_overlap_ratio
@@ -214,36 +248,18 @@ class SAMAutomaticMaskGenerator:
         if len(crop_boxes) > 1:
             # Prefer masks from smaller crops
             scores = 1 / _box_area(data["crop_boxes"])
+            boxes = ops.cast(data["boxes"], "float32")
             scores = ops.cast(scores, "float32")
-            if keras.backend.backend() == "torch":
-                from torchvision.ops import batched_nms
-                keep_by_nms = batched_nms(
-                    ops.cast(data["boxes"], "float32"),
-                    scores,
-                    ops.zeros_like(data["boxes"][:, 0]),  # categories
-                    iou_threshold=self.crop_nms_thresh,
-                )
-                del batched_nms
-            elif keras.backend.backend() == "tensorflow":
-                import tensorflow as tf
-                keep_by_nms, _ = tf.image.non_max_suppression_padded(
-                    boxes=box_xyxy_to_yxyx(ops.cast(data["boxes"], "float32")),
-                    scores=scores,
-                    max_output_size=100,
-                    iou_threshold=self.crop_nms_thresh
-                )
-                del tf
-            else:
-                keep_by_nms, num_valid = non_max_suppression(
-                    boxes=box_xyxy_to_yxyx(ops.cast(data["boxes"], "float32")),
-                    scores=scores,
-                    max_output_size=100,
-                    iou_threshold=self.crop_nms_thresh
-                )
-                keep_by_nms = keep_by_nms[0][:num_valid]
+            keep_by_nms = _batched_nms(
+                boxes,
+                scores,
+                iou_threshold=self.crop_nms_thresh,
+                max_output_size=self.max_output_masks
+            )
             data.filter(keep_by_nms)
 
         data.to_numpy()
+
         return data
 
     def _process_crop(
@@ -272,38 +288,18 @@ class SAMAutomaticMaskGenerator:
         self.predictor.reset_image()
 
         # Remove duplicates within this crop.
-        if keras.backend.backend() == "torch":
-            from torchvision.ops import batched_nms
-            keep_by_nms = batched_nms(
-                ops.cast(data["boxes"], "float32"),
-                data["iou_preds"],
-                ops.zeros_like(data["boxes"][:, 0]),  # categories
-                iou_threshold=self.box_nms_thresh,
-            )
-            del batched_nms
-        elif keras.backend.backend() == "tensorflow":
-            import tensorflow as tf
-            keep_by_nms, _ = tf.image.non_max_suppression_padded(
-                boxes=box_xyxy_to_yxyx(ops.cast(data["boxes"], "float32")),
-                scores=data["iou_preds"],
-                max_output_size=100,
-                iou_threshold=self.box_nms_thresh
-            )
-            del tf
-        else:
-            keep_by_nms, num_valid = non_max_suppression(
-                boxes=box_xyxy_to_yxyx(ops.cast(data["boxes"], "float32")),
-                scores=data["iou_preds"],
-                max_output_size=100,
-                iou_threshold=self.box_nms_thresh
-            )
-            keep_by_nms = keep_by_nms[0][:num_valid]
+        keep_by_nms = _batched_nms(
+            ops.cast(data["boxes"], "float32"),
+            ops.cast(data["iou_preds"], "float32"),
+            iou_threshold=self.box_nms_thresh,
+            max_output_size=self.max_output_masks
+        )
         data.filter(keep_by_nms)
 
         # Return to the original image frame
         data["boxes"] = uncrop_boxes_xyxy(data["boxes"], crop_box)
         data["points"] = uncrop_points(data["points"], crop_box)
-        data["crop_boxes"] = ops.array([crop_box for _ in range(len(data["rles"]))])
+        data["crop_boxes"] = ops.convert_to_tensor([crop_box for _ in range(len(data["rles"]))])
 
         return data
 
@@ -364,9 +360,8 @@ class SAMAutomaticMaskGenerator:
 
         return data
 
-    @staticmethod
     def postprocess_small_regions(
-        mask_data: MaskData, min_area: int, nms_thresh: float
+        self, mask_data: MaskData, min_area: int, nms_thresh: float
     ) -> MaskData:
         """
         Removes small disconnected regions and holes in masks, then reruns
@@ -399,38 +394,18 @@ class SAMAutomaticMaskGenerator:
         masks = ops.concatenate(new_masks, axis=0)
         scores = ops.convert_to_tensor(scores, "float32")
         boxes = batched_mask_to_box(masks)
-        if keras.backend.backend() == "torch":
-            from torchvision.ops import batched_nms
-            keep_by_nms = batched_nms(
-                ops.cast(boxes, "float32"),
-                scores,
-                ops.zeros_like(boxes[:, 0]),  # categories
-                iou_threshold=nms_thresh,
-            )
-            del batched_nms
-        elif keras.backend.backend() == "tensorflow":
-            import tensorflow as tf
-            keep_by_nms, _ = tf.image.non_max_suppression_padded(
-                boxes=box_xyxy_to_yxyx(ops.cast(boxes, "float32")),
-                scores=scores,
-                max_output_size=100,
-                iou_threshold=nms_thresh
-            )
-            del tf
-        else:
-            keep_by_nms, num_valid = non_max_suppression(
-                boxes=box_xyxy_to_yxyx(ops.cast(boxes, "float32")),
-                scores=scores,
-                max_output_size=100,
-                iou_threshold=nms_thresh
-            )
-            keep_by_nms = keep_by_nms[0][:num_valid]
+        keep_by_nms = _batched_nms(
+            ops.cast(boxes, "float32"),
+            scores,
+            iou_threshold=nms_thresh,
+            max_output_size=self.max_output_masks
+        )
 
         # Only recalculate RLEs for masks that have changed
         for i_mask in keep_by_nms:
             if scores[i_mask] == 0.0:
-                mask_torch = masks[i_mask][None, ...]
-                mask_data["rles"][i_mask] = mask_to_rle_tensor(mask_torch)[0]
+                mask_tensor = masks[i_mask][None, ...]
+                mask_data["rles"][i_mask] = mask_to_rle_tensor(mask_tensor)[0]
                 mask_data["boxes"][i_mask] = ops.convert_to_numpy(boxes[i_mask])  # update res directly
         mask_data.filter(keep_by_nms)
 

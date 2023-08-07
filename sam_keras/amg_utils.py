@@ -23,17 +23,13 @@ class MaskData:
 
     def __init__(self, **kwargs):
         for v in kwargs.values():
-            if not isinstance(
-                v, (list, np.ndarray)
-            ) and not ops.is_tensor(v):
-                raise ValueError("MaskData only supports list, numpy arrays, and tensors.")
+            if not isinstance(v, list) and not ops.is_tensor(v):
+                raise ValueError("`MaskData` only supports `list` and tensors.")
         self._stats = dict(**kwargs)
 
     def __setitem__(self, key, item):
-        if not isinstance(
-            item, (list, np.ndarray)
-        ) and not ops.is_tensor(item):
-            raise ValueError("MaskData only supports list, numpy arrays, and tensors.")
+        if not isinstance(item, list) and not ops.is_tensor(item):
+            raise ValueError("`MaskData` only supports `list` and tensors.")
         self._stats[key] = item
 
     def __delitem__(self, key):
@@ -191,7 +187,6 @@ def area_from_rle(rle):
     return sum(rle["counts"][1::2])
 
 
-# TODO: treat masks as (H, W, C)
 def calculate_stability_score(
     masks, mask_threshold, threshold_offset
 ):
@@ -271,6 +266,7 @@ def generate_crop_boxes(
 
 def uncrop_boxes_xyxy(boxes, crop_box):
     x0, y0, _, _ = crop_box
+    boxes = ops.cast(boxes, "float32")
     offset = ops.convert_to_tensor([[x0, y0, x0, y0]], dtype="float32")
     # Check if boxes has a channel dimension
     if len(boxes.shape) == 3:
@@ -280,14 +276,14 @@ def uncrop_boxes_xyxy(boxes, crop_box):
 
 def uncrop_points(points, crop_box):
     x0, y0, _, _ = crop_box
+    points = ops.cast(points, "float32")
     offset = ops.convert_to_tensor([[x0, y0]], dtype="float32")
     # Check if points has a channel dimension
     if len(points.shape) == 3:
         offset = offset[:, None, ...]
-    return ops.cast(points, "float32") + offset
+    return points + offset
 
 
-# TODO: treat masks as (H, W, C)
 def uncrop_masks(
     masks, crop_box, orig_h, orig_w
 ):
@@ -301,7 +297,6 @@ def uncrop_masks(
     return ops.pad(masks, pad)
 
 
-# TODO: treat masks as (H, W, C)
 def remove_small_regions(
     mask, area_thresh, mode
 ):
@@ -337,7 +332,6 @@ def coco_encode_rle(uncompressed_rle):
     return rle
 
 
-# TODO: treat masks as (H, W, C)
 def batched_mask_to_box(masks):
     """
     Calculates boxes in XYXY format around masks. Return [0,0,0,0] for

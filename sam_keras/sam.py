@@ -15,14 +15,20 @@ from sam_keras.utils import _torch_no_grad
 
 class ResizeLongestSide:
     def __init__(self, target_length):
-        self.target_length = target_length
+        self.target_length = int(target_length)
 
     def apply_image(self, image):
+        image = np.asarray(image)
+        if len(image.shape) != 3:
+            raise ValueError("`image` must be of shape `(H, W, C)`.")
         target_size = self.get_preprocess_shape(image.shape[0], image.shape[1])
-        return np.array(Image.fromarray(image).resize(target_size[::-1], resample=Image.Resampling.BILINEAR))
+        return np.asarray(Image.fromarray(image).resize(target_size[::-1], resample=Image.Resampling.BILINEAR))
 
     def apply_coords(self, coords, original_size):
-        old_h, old_w = original_size
+        coords = ops.convert_to_tensor(coords)
+        if coords.shape[-1] != 2:
+            raise ValueError(f"`coords` must be of shape `(..., 2)` but got `{coords.shape}`")
+        old_h, old_w = tuple(original_size)
         new_h, new_w = self.get_preprocess_shape(original_size[0], original_size[1])
         coords = ops.cast(coords, "float32")
         coords_x = coords[..., 0] * (new_w / old_w)
@@ -30,6 +36,9 @@ class ResizeLongestSide:
         return ops.stack([coords_x, coords_y], axis=-1)
 
     def apply_boxes(self, boxes, original_size):
+        boxes = ops.convert_to_tensor(boxes)
+        if boxes.shape[-1] != 4:
+            raise ValueError(f"`boxes` must of shape `(..., 4)` but got `{boxes.shape}`")
         boxes = self.apply_coords(
             ops.reshape(
                 boxes, (-1, 2, 2)
@@ -61,15 +70,12 @@ class SegmentAnythingModel:
         self.image_encoder = image_encoder
         self.prompt_encoder = prompt_encoder
         self.mask_decoder = mask_decoder
-        self.pixel_mean = pixel_mean
-        self.pixel_std = pixel_std
-        self.pixel_mean = ops.array(pixel_mean, dtype="float32")
-        self.pixel_std = ops.array(pixel_std, dtype="float32")
+        self.pixel_mean = ops.convert_to_tensor(pixel_mean, dtype="float32")
+        self.pixel_std = ops.convert_to_tensor(pixel_std, dtype="float32")
         self.transform = ResizeLongestSide(image_encoder.img_size)
         self.reset_image()
 
     def set_image(self, image):
-        # Transform the image to the form expected by the model
         input_image = self.transform.apply_image(image)
         input_image_tensor = ops.convert_to_tensor(input_image, dtype="float32")
         input_image_tensor = input_image_tensor[None, :, :, :]
@@ -83,14 +89,14 @@ class SegmentAnythingModel:
         image to be already transformed to the format expected by the model.
 
         Arguments:
-          transformed_image (torch.Tensor): The input image, with shape
+          transformed_image (tensor): The input image, with shape
             1x3xHxW, which has been transformed with ResizeLongestSide.
           original_image_size (tuple(int, int)): The size of the image
             before transformation, in (H, W) format.
         """
         self.reset_image()
 
-        self.original_size = original_image_size
+        self.original_size = tuple(original_image_size)
         self.input_size = tuple(transformed_image.shape[-2:])
         self.unprocessed_image = transformed_image
         input_image = self.preprocess_images(transformed_image)
@@ -146,6 +152,8 @@ class SegmentAnythingModel:
                     "low_res_masks": low_res_masks,
                 }
             )
+        if isinstance(batched_input, dict):
+            return outputs[0]
         return outputs
 
     def postprocess_masks(self, masks, input_size, original_size):
@@ -174,7 +182,6 @@ class SegmentAnythingModel:
             raise RuntimeError(
                 "An image must be set with .set_image(...) to generate an embedding."
             )
-        assert self.features is not None, "Features must exist if an image has been set."
         return self.features
 
     def reset_image(self) -> None:

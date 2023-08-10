@@ -9,7 +9,7 @@
 from keras_cv.backend import keras
 from keras_cv.backend import ops
 
-from sam_keras.common import MLPBlock
+from sam_keras.common import MLPBlock, SerializableSequential
 
 
 def get_rel_pos(query_size, key_size, rel_pos):
@@ -528,7 +528,7 @@ class ImageEncoder(keras.models.Model):
                 input_size=(img_size // patch_size, img_size // patch_size),
             )
             self.transformer_blocks.append(block)
-        self.bottleneck = keras.models.Sequential(
+        self.bottleneck = SerializableSequential(
             [
                 keras.layers.Conv2D(
                     filters=out_chans, kernel_size=1, use_bias=False

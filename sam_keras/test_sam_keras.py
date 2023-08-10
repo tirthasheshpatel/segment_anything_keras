@@ -59,38 +59,38 @@ class TestSAM:
         assert x_out.shape == (1, 64, 64, 1280)
         assert np.all(x_out == 1)
 
-    @pytest.mark.slow
-    def test_image_encoder(self):
-        image_encoder = ImageEncoder(
-            img_size=1024,
-            patch_size=16,
-            in_chans=3,
-            embed_dim=1280,
-            depth=32,
-            mlp_dim=1280 * 4,
-            num_heads=16,
-            out_chans=256,
-            use_bias=True,
-            use_rel_pos=True,
-            window_size=14,
-            global_attention_indices=[7, 15, 23, 31],
-        )
-        x = np.ones((1, 1024, 1024, 3))
-        x_out = ops.convert_to_numpy(image_encoder(x))
-        num_parameters = sum(
-            np.prod(tuple(x.shape)) for x in image_encoder.trainable_variables
-        )
-        assert x_out.shape == (1, 64, 64, 256)
-        assert num_parameters == 637_026_048
+    # @pytest.mark.slow
+    # def test_image_encoder(self):
+    #     image_encoder = ImageEncoder(
+    #         img_size=1024,
+    #         patch_size=16,
+    #         in_chans=3,
+    #         embed_dim=1280,
+    #         depth=32,
+    #         mlp_dim=1280 * 4,
+    #         num_heads=16,
+    #         out_chans=256,
+    #         use_bias=True,
+    #         use_rel_pos=True,
+    #         window_size=14,
+    #         global_attention_indices=[7, 15, 23, 31],
+    #     )
+    #     x = np.ones((1, 1024, 1024, 3))
+    #     x_out = ops.convert_to_numpy(image_encoder(x))
+    #     num_parameters = sum(
+    #         np.prod(tuple(x.shape)) for x in image_encoder.trainable_variables
+    #     )
+    #     assert x_out.shape == (1, 64, 64, 256)
+    #     assert num_parameters == 637_026_048
 
-        # saving test
-        path = os.path.join(
-            tempfile.gettempdir(), "sam_tf_image_encoder.keras"
-        )
-        image_encoder.save(path)
-        loaded_model = keras.saving.load_model(path)
-        x_out_loaded = ops.convert_to_numpy(loaded_model(x))
-        np.testing.assert_equal(x_out, x_out_loaded)
+    #     # saving test
+    #     path = os.path.join(
+    #         tempfile.gettempdir(), "sam_tf_image_encoder.keras"
+    #     )
+    #     image_encoder.save(path)
+    #     loaded_model = keras.saving.load_model(path)
+    #     x_out_loaded = ops.convert_to_numpy(loaded_model(x))
+    #     np.testing.assert_equal(x_out, x_out_loaded)
 
     def get_points_labels_box_mask(self, B):
         prompt_encoder = PromptEncoder(

@@ -9,7 +9,7 @@
 from keras_cv.backend import keras
 from keras_cv.backend import ops
 
-from sam_keras.common import MLPBlock
+from sam_keras.common import MLPBlock, SerializableSequential
 
 
 @keras.utils.register_keras_serializable(package="keras_cv")
@@ -363,7 +363,7 @@ class MLP(keras.layers.Layer):
             self.dense_net.append(keras.layers.Dense(hidden_dim))
             self.dense_net.append(keras.layers.Activation("relu"))
         self.dense_net.append(keras.layers.Dense(output_dim))
-        self.dense_net = keras.models.Sequential(self.dense_net)
+        self.dense_net = SerializableSequential(self.dense_net)
 
         self.built = False
 
@@ -449,7 +449,7 @@ class MaskDecoder(keras.models.Model):
             self.num_mask_tokens, transformer_dim
         )
 
-        self.output_upscaling = keras.models.Sequential(
+        self.output_upscaling = SerializableSequential(
             [
                 keras.layers.Conv2DTranspose(
                     transformer_dim // 4, kernel_size=2, strides=2

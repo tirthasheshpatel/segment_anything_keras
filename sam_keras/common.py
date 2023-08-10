@@ -7,6 +7,47 @@
 # LICENSE file in the root directory of this source tree.
 
 from keras_cv.backend import keras
+from keras_cv.utils.python_utils import classproperty
+
+
+# TODO(tirthasheshpatel): Use Sequential model once the bug is resolved.
+# Temporarily substitute the Sequential model with this because a
+# bug in Keras Core prevents the weights of a sequential model to
+# load in TensorFlow if they are saved in JAX/Torch and vice versa.
+# This only happens when the `build` is called in the `__init__` step.
+@keras.utils.register_keras_serializable(package="keras_cv")
+class SerializableSequential(keras.layers.Layer):
+    def __init__(self, layers_list, **kwargs):
+        super().__init__(**kwargs)
+        self.layers_list = layers_list
+
+    def build(self, input_shape):
+        output_shape = input_shape
+        for layer in self.layers_list:
+            layer.build(output_shape)
+            output_shape = layer.compute_output_shape(output_shape)
+        self.built = True
+
+    def call(self, x):
+        for layer in self.layers_list:
+            x = layer(x)
+        return x
+    
+    def get_config(self):
+        config = super().get_config()
+        layers_list_serialized = [
+            keras.saving.serialize_keras_object(layer) for layer in self.layers_list
+        ]
+        config.update({
+            "layers_list": layers_list_serialized
+        })
+        
+    @classproperty
+    def from_config(self, config):
+        config.update({
+            "layers_list": [keras.layers_list.deserialize(layer) for layer in config["layers_list"]]
+        })
+        return super().from_config(config)
 
 
 @keras.utils.register_keras_serializable(package="keras_cv")

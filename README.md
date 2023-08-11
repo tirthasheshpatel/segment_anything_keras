@@ -19,6 +19,22 @@ Note on JAX automatic mask generator support: Since JAX doesn't offer an optimiz
 pip install git+https://github.com/tirthasheshpatel/segment_anything_keras.git
 ```
 
+Install the required dependencies:
+
+```shell
+pip install Pillow numpy keras-core keras-cv
+```
+
+Install TensorFlow, JAX, or PyTorch, whichever backend you'd like to use.
+PyTorch is required to port weights but once the model is saved, only the
+backend you want to load the model into needs to be installed.
+
+To get all the dependencies and all the backends to run the demos, do:
+
+```shell
+pip install -r requirements.txt
+```
+
 ## Port Weights
 
 ```python

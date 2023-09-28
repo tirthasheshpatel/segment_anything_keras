@@ -84,9 +84,7 @@ def _isclose(x1, x2, atol, rtol):
     return ops.convert_to_tensor(np.isclose(x1, x2, rtol=rtol, atol=atol))
 
 
-def is_box_near_crop_edge(
-    boxes, crop_box, orig_box, atol=20.0
-):
+def is_box_near_crop_edge(boxes, crop_box, orig_box, atol=20.0):
     """Filter masks at the edge of a crop, but not at the edge of the original image."""
     crop_box_torch = ops.convert_to_tensor(crop_box, dtype="float32")
     orig_box_torch = ops.convert_to_tensor(orig_box, dtype="float32")
@@ -106,7 +104,7 @@ def box_xyxy_to_xywh(box_xyxy, axis=-1):
             box_xyxy[2] - box_xyxy[0],
             box_xyxy[3] - box_xyxy[1],
         ],
-        axis=0
+        axis=0,
     )
     return ops.moveaxis(box_xywh, 0, axis)
 
@@ -120,15 +118,13 @@ def box_xyxy_to_yxyx(box_xyxy, axis=-1):
             box_xyxy[3],
             box_xyxy[2],
         ],
-        axis=0
+        axis=0,
     )
     return ops.moveaxis(box_yxyx, 0, axis)
 
 
 def batch_iterator(batch_size: int, *args):
-    if not len(args) > 0 or not all(
-        len(a) == len(args[0]) for a in args
-    ):
+    if not len(args) > 0 or not all(len(a) == len(args[0]) for a in args):
         raise ValueError("Batched iteration must have inputs of all the same size.")
     n_batches = len(args[0]) // batch_size + int(len(args[0]) % batch_size != 0)
     for b in range(n_batches):
@@ -143,9 +139,7 @@ def mask_to_rle_tensor(tensor):
     tensor = ops.convert_to_numpy(tensor)
     # Put in fortran order and flatten h,w
     b, h, w = tensor.shape
-    tensor = np.reshape(
-        np.transpose(tensor, axes=(0, 2, 1)), (b, w * h)
-    )
+    tensor = np.reshape(np.transpose(tensor, axes=(0, 2, 1)), (b, w * h))
 
     # Compute change indices
     diff = tensor[:, 1:] ^ tensor[:, :-1]
@@ -187,9 +181,7 @@ def area_from_rle(rle):
     return sum(rle["counts"][1::2])
 
 
-def calculate_stability_score(
-    masks, mask_threshold, threshold_offset
-):
+def calculate_stability_score(masks, mask_threshold, threshold_offset):
     """
     Computes the stability score for a batch of masks. The stability
     score is the IoU between the binary masks obtained by thresholding
@@ -197,11 +189,17 @@ def calculate_stability_score(
     """
     # One mask is always contained inside the other.
     # Save memory by preventing unnecessary cast to torch.int64
-    intersections = (
-        ops.sum(ops.sum(ops.cast(masks > (mask_threshold + threshold_offset), dtype="float32"), -1), -1)
+    intersections = ops.sum(
+        ops.sum(
+            ops.cast(masks > (mask_threshold + threshold_offset), dtype="float32"), -1
+        ),
+        -1,
     )
-    unions = (
-        ops.sum(ops.sum(ops.cast(masks > (mask_threshold - threshold_offset), dtype="float32"), -1), -1)
+    unions = ops.sum(
+        ops.sum(
+            ops.cast(masks > (mask_threshold - threshold_offset), dtype="float32"), -1
+        ),
+        -1,
     )
     return intersections / unions
 
@@ -216,9 +214,7 @@ def build_point_grid(n_per_side):
     return points
 
 
-def build_all_layer_point_grids(
-    n_per_side, n_layers, scale_per_layer
-):
+def build_all_layer_point_grids(n_per_side, n_layers, scale_per_layer):
     """Generates point grids for all crop layers."""
     points_by_layer = []
     for i in range(n_layers + 1):
@@ -227,9 +223,7 @@ def build_all_layer_point_grids(
     return points_by_layer
 
 
-def generate_crop_boxes(
-    im_size, n_layers, overlap_ratio
-):
+def generate_crop_boxes(im_size, n_layers, overlap_ratio):
     """
     Generates a list of crop boxes of different sizes. Each layer
     has (2**i)**2 boxes for the ith layer.
@@ -284,9 +278,7 @@ def uncrop_points(points, crop_box):
     return points + offset
 
 
-def uncrop_masks(
-    masks, crop_box, orig_h, orig_w
-):
+def uncrop_masks(masks, crop_box, orig_h, orig_w):
     x0, y0, x1, y1 = crop_box
     if x0 == 0 and y0 == 0 and x1 == orig_w and y1 == orig_h:
         return masks
@@ -297,9 +289,7 @@ def uncrop_masks(
     return ops.pad(masks, pad)
 
 
-def remove_small_regions(
-    mask, area_thresh, mode
-):
+def remove_small_regions(mask, area_thresh, mode):
     """
     Removes small disconnected regions and holes in a mask. Returns the
     mask and an indicator of if the mask has been modified.
@@ -350,14 +340,18 @@ def batched_mask_to_box(masks):
 
     # Get top and bottom edges
     in_height = ops.max(masks, axis=-1)
-    in_height_coords = ops.cast(in_height, "float32") * ops.arange(h, dtype="float32")[None, :]
+    in_height_coords = (
+        ops.cast(in_height, "float32") * ops.arange(h, dtype="float32")[None, :]
+    )
     bottom_edges = ops.max(in_height_coords, axis=-1)
     in_height_coords = in_height_coords + h * ops.cast(~in_height, "float32")
     top_edges = ops.min(in_height_coords, axis=-1)
 
     # Get left and right edges
     in_width = ops.max(masks, axis=-2)
-    in_width_coords = ops.cast(in_width, "float32") * ops.arange(w, dtype="float32")[None, :]
+    in_width_coords = (
+        ops.cast(in_width, "float32") * ops.arange(w, dtype="float32")[None, :]
+    )
     right_edges = ops.max(in_width_coords, axis=-1)
     in_width_coords = in_width_coords + w * ops.cast(~in_width, "float32")
     left_edges = ops.min(in_width_coords, axis=-1)

@@ -12,7 +12,6 @@ from keras_cv.backend import keras
 from keras_cv.backend import multi_backend
 from keras_cv.layers.object_detection.non_max_suppression import non_max_suppression
 
-from sam_keras.utils import _torch_no_grad
 from sam_keras.amg_utils import (
     MaskData,
     area_from_rle,
@@ -34,6 +33,9 @@ from sam_keras.amg_utils import (
 )
 
 
+__all__ = ["SAMAutomaticMaskGenerator"]
+
+
 def _box_area(boxes):
     return (boxes[..., 2] - boxes[..., 0]) * (boxes[..., 3] - boxes[..., 1])
 
@@ -41,6 +43,7 @@ def _box_area(boxes):
 def _batched_nms(boxes, scores, iou_threshold, max_output_size):
     if multi_backend() and keras.backend.backend() == "torch":
         from torchvision.ops import batched_nms
+
         idx = batched_nms(
             boxes,
             scores,
@@ -52,19 +55,30 @@ def _batched_nms(boxes, scores, iou_threshold, max_output_size):
         multi_backend() and keras.backend.backend() == "tensorflow"
     ):
         import tensorflow as tf
-        idx, _ = tf.image.non_max_suppression_padded(
+
+        idx = tf.image.non_max_suppression(
             boxes=box_xyxy_to_yxyx(boxes),
             scores=scores,
             max_output_size=max_output_size,
-            iou_threshold=iou_threshold
+            iou_threshold=iou_threshold,
         )
         del tf
+    elif multi_backend() and keras.backend.backend() == "jax":
+        from sam_keras import jax_nms
+
+        idx = jax_nms.non_max_suppression_padded(
+            boxes=box_xyxy_to_yxyx(boxes)[None, ...],
+            scores=scores[None, ...],
+            max_output_size=max_output_size,
+            iou_threshold=iou_threshold,
+        )
+        del jax_nms
     else:
         idx, num_valid = non_max_suppression(
             boxes=box_xyxy_to_yxyx(boxes),
             scores=scores,
             max_output_size=max_output_size,
-            iou_threshold=iou_threshold
+            iou_threshold=iou_threshold,
         )
         idx = idx[0][:num_valid]
     return idx
@@ -73,7 +87,7 @@ def _batched_nms(boxes, scores, iou_threshold, max_output_size):
 class SAMAutomaticMaskGenerator:
     def __init__(
         self,
-        model,
+        predictor,
         points_per_side=32,
         points_per_batch=64,
         pred_iou_thresh=0.88,
@@ -87,7 +101,7 @@ class SAMAutomaticMaskGenerator:
         point_grids=None,
         min_mask_region_area=0,
         output_mode="binary_mask",
-        max_output_masks=100
+        max_output_masks=100,
     ) -> None:
         """
         Using a SAM model, generates masks for the entire image.
@@ -96,7 +110,7 @@ class SAMAutomaticMaskGenerator:
         for SAM with a ViT-H backbone.
 
         Arguments:
-          model (Sam): The SAM model to use for mask prediction.
+          predictor (Sam): The SAM model to use for mask prediction.
           points_per_side (int or None): The number of points to be sampled
             along one side of the image. The total number of points is
             points_per_side**2. If None, 'point_grids' must provide explicit
@@ -136,7 +150,9 @@ class SAMAutomaticMaskGenerator:
         """
 
         if not ((points_per_side is None) ^ (point_grids is None)):
-            raise ValueError("Exactly one of points_per_side or point_grid must be provided.")
+            raise ValueError(
+                "Exactly one of points_per_side or point_grid must be provided."
+            )
         if points_per_side is not None:
             self.point_grids = build_all_layer_point_grids(
                 points_per_side,
@@ -160,7 +176,7 @@ class SAMAutomaticMaskGenerator:
         if min_mask_region_area > 0:
             import cv2  # type: ignore # noqa: F401
 
-        self.predictor = model
+        self.predictor = predictor
         self.points_per_batch = points_per_batch
         self.pred_iou_thresh = pred_iou_thresh
         self.stability_score_thresh = stability_score_thresh
@@ -174,8 +190,7 @@ class SAMAutomaticMaskGenerator:
         self.output_mode = output_mode
         self.max_output_masks = max_output_masks
 
-    @_torch_no_grad
-    def generate(self, image):
+    def generate(self, image, **kwargs):
         """
         Generates masks for the given image.
 
@@ -201,7 +216,7 @@ class SAMAutomaticMaskGenerator:
         """
 
         # Generate masks
-        mask_data = self._generate_masks(image)
+        mask_data = self._generate_masks(image, **kwargs)
 
         # Filter small disconnected regions and holes in masks
         if self.min_mask_region_area > 0:
@@ -213,7 +228,9 @@ class SAMAutomaticMaskGenerator:
 
         # Encode masks
         if self.output_mode == "coco_rle":
-            mask_data["segmentations"] = [coco_encode_rle(rle) for rle in mask_data["rles"]]
+            mask_data["segmentations"] = [
+                coco_encode_rle(rle) for rle in mask_data["rles"]
+            ]
         elif self.output_mode == "binary_mask":
             mask_data["segmentations"] = [rle_to_mask(rle) for rle in mask_data["rles"]]
         else:
@@ -225,17 +242,21 @@ class SAMAutomaticMaskGenerator:
             ann = {
                 "segmentation": mask_data["segmentations"][idx],
                 "area": area_from_rle(mask_data["rles"][idx]),
-                "bbox": ops.convert_to_numpy(box_xyxy_to_xywh(mask_data["boxes"][idx])).tolist(),
+                "bbox": ops.convert_to_numpy(
+                    box_xyxy_to_xywh(mask_data["boxes"][idx])
+                ).tolist(),
                 "predicted_iou": mask_data["iou_preds"][idx].item(),
                 "point_coords": [mask_data["points"][idx].tolist()],
                 "stability_score": mask_data["stability_score"][idx].item(),
-                "crop_box": ops.convert_to_numpy(box_xyxy_to_xywh(mask_data["crop_boxes"][idx])).tolist(),
+                "crop_box": ops.convert_to_numpy(
+                    box_xyxy_to_xywh(mask_data["crop_boxes"][idx])
+                ).tolist(),
             }
             curr_anns.append(ann)
 
         return curr_anns
 
-    def _generate_masks(self, image):
+    def _generate_masks(self, image, **kwargs):
         orig_size = image.shape[:2]
         crop_boxes, layer_idxs = generate_crop_boxes(
             orig_size, self.crop_n_layers, self.crop_overlap_ratio
@@ -244,7 +265,9 @@ class SAMAutomaticMaskGenerator:
         # Iterate over image crops
         data = MaskData()
         for crop_box, layer_idx in zip(crop_boxes, layer_idxs):
-            crop_data = self._process_crop(image, crop_box, layer_idx, orig_size)
+            crop_data = self._process_crop(
+                image, crop_box, layer_idx, orig_size, **kwargs
+            )
             data.cat(crop_data)
 
         # Remove duplicate masks between crops
@@ -257,7 +280,7 @@ class SAMAutomaticMaskGenerator:
                 boxes,
                 scores,
                 iou_threshold=self.crop_nms_thresh,
-                max_output_size=self.max_output_masks
+                max_output_size=self.max_output_masks,
             )
             data.filter(keep_by_nms)
 
@@ -265,18 +288,12 @@ class SAMAutomaticMaskGenerator:
 
         return data
 
-    def _process_crop(
-        self,
-        image,
-        crop_box,
-        crop_layer_idx,
-        orig_size,
-    ):
+    def _process_crop(self, image, crop_box, crop_layer_idx, orig_size, **kwargs):
         # Crop the image and calculate embeddings
         x0, y0, x1, y1 = crop_box
         cropped_im = image[y0:y1, x0:x1, :]
         cropped_im_size = cropped_im.shape[:2]
-        self.predictor.set_image(cropped_im)
+        self.predictor.set_image(cropped_im, **kwargs)
 
         # Get points for this crop
         points_scale = np.array(cropped_im_size)[None, ::-1]
@@ -285,7 +302,9 @@ class SAMAutomaticMaskGenerator:
         # Generate masks for this crop in batches
         data = MaskData()
         for (points,) in batch_iterator(self.points_per_batch, points_for_image):
-            batch_data = self._process_batch(points, cropped_im_size, crop_box, orig_size)
+            batch_data = self._process_batch(
+                points, cropped_im_size, crop_box, orig_size, **kwargs
+            )
             data.cat(batch_data)
             del batch_data
         self.predictor.reset_image()
@@ -295,38 +314,44 @@ class SAMAutomaticMaskGenerator:
             ops.cast(data["boxes"], "float32"),
             ops.cast(data["iou_preds"], "float32"),
             iou_threshold=self.box_nms_thresh,
-            max_output_size=self.max_output_masks
+            max_output_size=self.max_output_masks,
         )
         data.filter(keep_by_nms)
 
         # Return to the original image frame
         data["boxes"] = uncrop_boxes_xyxy(data["boxes"], crop_box)
         data["points"] = uncrop_points(data["points"], crop_box)
-        data["crop_boxes"] = ops.convert_to_tensor([crop_box for _ in range(len(data["rles"]))])
+        data["crop_boxes"] = ops.convert_to_tensor(
+            [crop_box for _ in range(len(data["rles"]))]
+        )
 
         return data
 
-    def _process_batch(
-        self,
-        points,
-        im_size,
-        crop_box,
-        orig_size,
-    ):
+    def _process_batch(self, points, im_size, crop_box, orig_size, **kwargs):
         orig_h, orig_w = orig_size
 
         # Run model on this batch
         transformed_points = self.predictor.transform.apply_coords(points, im_size)
-        in_points = ops.convert_to_tensor(transformed_points)
-        in_labels = ops.ones(in_points.shape[0], dtype="int64")
-        out = self.predictor.predict(
-            dict(point_coords=in_points[:, None, :],
-            point_labels=in_labels[:, None]),
-            multimask_output=True,
+        in_points = ops.convert_to_tensor(transformed_points)[:, None, :]
+        B = in_points.shape[0]
+        in_labels = ops.ones(B, dtype="int32")[:, None]
+        in_points = ops.concatenate(
+            [in_points, ops.zeros((B, 1, 2), dtype=in_points.dtype)], axis=1
         )
-        masks, iou_preds = out[0]["masks"], out[0]["iou_predictions"]
+        in_labels = ops.concatenate(
+            [in_labels, -ops.ones((B, 1), dtype=in_labels.dtype)], axis=1
+        )
+        out = self.predictor.predict(
+            dict(point_coords=in_points, point_labels=in_labels),
+            multimask_output=True,
+            **kwargs,
+        )
+        masks, iou_preds = out["masks"][:, 1:], out["iou_predictions"][:, 1:]
 
         # Serialize predictions and store in MaskData
+        masks, iou_preds, points = map(
+            ops.convert_to_tensor, [masks, iou_preds, points]
+        )
         data = MaskData(
             masks=ops.reshape(masks, (-1, *masks.shape[2:])),
             iou_preds=ops.reshape(iou_preds, (-1, *iou_preds.shape[2:])),
@@ -352,7 +377,9 @@ class SAMAutomaticMaskGenerator:
         data["boxes"] = batched_mask_to_box(data["masks"])
 
         # Filter boxes that touch crop boundaries
-        keep_mask = ~is_box_near_crop_edge(data["boxes"], crop_box, [0, 0, orig_w, orig_h])
+        keep_mask = ~is_box_near_crop_edge(
+            data["boxes"], crop_box, [0, 0, orig_w, orig_h]
+        )
         if not ops.all(keep_mask):
             data.filter(keep_mask)
 
@@ -401,7 +428,7 @@ class SAMAutomaticMaskGenerator:
             ops.cast(boxes, "float32"),
             scores,
             iou_threshold=nms_thresh,
-            max_output_size=self.max_output_masks
+            max_output_size=self.max_output_masks,
         )
 
         # Only recalculate RLEs for masks that have changed
@@ -409,7 +436,9 @@ class SAMAutomaticMaskGenerator:
             if scores[i_mask] == 0.0:
                 mask_tensor = masks[i_mask][None, ...]
                 mask_data["rles"][i_mask] = mask_to_rle_tensor(mask_tensor)[0]
-                mask_data["boxes"][i_mask] = ops.convert_to_numpy(boxes[i_mask])  # update res directly
+                mask_data["boxes"][i_mask] = ops.convert_to_numpy(
+                    boxes[i_mask]
+                )  # update res directly
         mask_data.filter(keep_by_nms)
 
         return mask_data

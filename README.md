@@ -37,12 +37,20 @@ import os
 os.environ['KERAS_BACKEND'] = "tensorflow"
 
 from keras_cv.models import SegmentAnythingModel
+from sam_keras import SAMPredictor
 
 # Get the huge model trained on the SA-1B dataset.
 # Other available options are:
 #   - "sam_base_sa1b"
 #   - "sam_large_sa1b"
 model = SegmentAnythingModel.from_preset("sam_huge_sa1b")
+
+# Create the predictor
+predictor = SAMPredictor(model)
+
+# Now you can use the predictor just like the one on the original repo.
+# The only difference is list of input dicts isn't supported; instead
+# pass each input dict separately to the `predict` method.
 ```
 
 ## Notes

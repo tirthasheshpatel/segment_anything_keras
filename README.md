@@ -1,17 +1,13 @@
 # Segment Anything Model in Multi-Backend Keras
 
-This is an implementation of the Segment Anything model in Keras Core.
+This is an implementation of the Segment Anything predictor and automatic mask
+generator in Keras Core.
 
-The model currently runs in TensorFlow, JAX, PyTorch, and NumPy, and supports inference.
-
-Check out the demos for using the model and porting over the weights from PyTorch:
+The demos uses KerasCV's Segment Anything model. Note that we depend on the
+KerasCV's source directly until v0.7.0 has branched.
 
 - [Predictor demo](Segment_Anything_multi_backend_Keras_Demo.ipynb)
 - [Atomatic Mask Generator demo](Segment_Anything_Automatic_Mask_Generator_Demo.ipynb)
-
-Note on JAX automatic mask generator support: Since JAX doesn't offer an optimized implementation of the NMS op, it is slower than other backends.
-
-**Note: This project will be merged with KerasCV in the future.**
 
 ## Install the package
 
@@ -22,12 +18,10 @@ pip install git+https://github.com/tirthasheshpatel/segment_anything_keras.git
 Install the required dependencies:
 
 ```shell
-pip install Pillow numpy keras-core keras-cv
+pip install Pillow numpy keras-core git+https://github.com/keras-team/keras-cv.git
 ```
 
 Install TensorFlow, JAX, or PyTorch, whichever backend you'd like to use.
-PyTorch is required to port weights but once the model is saved, only the
-backend you want to load the model into needs to be installed.
 
 To get all the dependencies and all the backends to run the demos, do:
 
@@ -35,56 +29,37 @@ To get all the dependencies and all the backends to run the demos, do:
 pip install -r requirements.txt
 ```
 
-## Port Weights
+## Getting the pretrained Segment Anything Model
 
 ```python
 # Use TensorFlow backend, choose any you want
 import os
 os.environ['KERAS_BACKEND'] = "tensorflow"
 
-# torch model
-import torch
-from segment_anything.build_sam import build_sam_vit_h
-from segment_anything.modeling import Sam
-from segment_anything import sam_model_registry, SamPredictor
-from sam_keras import port_weights
-from sam_keras import build_sam_huge
+from keras_cv.models import SegmentAnythingModel
+from sam_keras import SAMPredictor
 
-# Define the huge model in Keras Core
-model = build_model_huge()
+# Get the huge model trained on the SA-1B dataset.
+# Other available options are:
+#   - "sam_base_sa1b"
+#   - "sam_large_sa1b"
+model = SegmentAnythingModel.from_preset("sam_huge_sa1b")
 
-# Create a predictor to port the weights from PyTorch to TensorFlow
-sam_checkpoint = "sam_vit_h_4b8939.pth"
-model_type = "vit_h"
-sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
-predictor = SamPredictor(sam)
+# Create the predictor
+predictor = SAMPredictor(model)
 
-# Port the PyTorch model's weights to the multi-backend Keras model
-port_weights(model, predictor.model)
-
-# Save the image_encoder, prompt_encoder and the mask_decoder
-model.image_encoder.save_weights("sam_vitdet_huge.weights.h5")
-model.prompt_encoder.save_weights("sam_prompt_encoder.weights.h5")
-model.mask_decoder.save_weights("sam_mask_decoder.weights.h5")
+# Now you can use the predictor just like the one on the original repo.
+# The only difference is list of input dicts isn't supported; instead
+# pass each input dict separately to the `predict` method.
 ```
 
-## Load the model in any backend
+## Notes
 
-Once the model is saved, it can be loaded into any backend!
-For example, in the above example, the model is saved in TensorFlow
-but it can be loaded in JAX, PyTorch, and NumPy!
+Right now JAX and TensorFlow have large compile-time overhead. Prompt encoder
+recompiles each time a different combination of prompts (points only,
+points + boxes, boxes only, etc) is passed. To avoid this, compile the model
+with `run_eagerly=True`.
 
-```python
-import os
-os.environ['KERAS_BACKEND'] = "jax"
+## Benchmarks
 
-from sam_keras import build_sam_huge
-
-# Define the huge model in Keras Core
-model = build_model_huge()
-
-# Load the image_encoder, prompt_encoder and the mask_decoder
-model.image_encoder.load_weights("sam_vitdet_huge.weights.h5")
-model.prompt_encoder.load_weights("sam_prompt_encoder.weights.h5")
-model.mask_decoder.load_weights("sam_mask_decoder.weights.h5")
-```
+TODO

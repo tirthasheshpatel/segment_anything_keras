@@ -346,7 +346,7 @@ class SAMAutomaticMaskGenerator:
             multimask_output=True,
             **kwargs,
         )
-        masks, iou_preds = out["masks"][:, 1:], out["iou_predictions"][:, 1:]
+        masks, iou_preds = out["masks"], out["iou_predictions"]
 
         # Serialize predictions and store in MaskData
         masks, iou_preds, points = map(

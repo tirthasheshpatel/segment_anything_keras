@@ -9,7 +9,6 @@
 import numpy as np
 from keras_cv.backend import ops
 from keras_cv.backend import keras
-from keras_cv.backend import multi_backend
 from keras_cv.layers.object_detection.non_max_suppression import non_max_suppression
 
 from sam_keras.amg_utils import (
@@ -41,7 +40,7 @@ def _box_area(boxes):
 
 
 def _batched_nms(boxes, scores, iou_threshold, max_output_size):
-    if multi_backend() and keras.backend.backend() == "torch":
+    if keras.config.backend() == "torch":
         from torchvision.ops import batched_nms
 
         idx = batched_nms(
@@ -51,9 +50,7 @@ def _batched_nms(boxes, scores, iou_threshold, max_output_size):
             iou_threshold=iou_threshold,
         )
         del batched_nms
-    elif not multi_backend() or (
-        multi_backend() and keras.backend.backend() == "tensorflow"
-    ):
+    elif keras.config.backend() == "tensorflow":
         import tensorflow as tf
 
         idx = tf.image.non_max_suppression(
@@ -63,7 +60,7 @@ def _batched_nms(boxes, scores, iou_threshold, max_output_size):
             iou_threshold=iou_threshold,
         )
         del tf
-    elif multi_backend() and keras.backend.backend() == "jax":
+    elif keras.config.backend() == "jax":
         from sam_keras import jax_nms
 
         idx = jax_nms.non_max_suppression_padded(

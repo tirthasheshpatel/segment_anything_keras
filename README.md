@@ -1,7 +1,7 @@
 # Segment Anything Model in Multi-Backend Keras
 
 This is an implementation of the Segment Anything predictor and automatic mask
-generator in Keras Core.
+generator in Keras 3.
 
 The demos uses KerasCV's Segment Anything model. Note that we depend on the
 KerasCV's source directly until v0.7.0 has branched.
@@ -18,7 +18,7 @@ pip install git+https://github.com/tirthasheshpatel/segment_anything_keras.git
 Install the required dependencies:
 
 ```shell
-pip install Pillow numpy keras-core git+https://github.com/keras-team/keras-cv.git
+pip install Pillow numpy keras-nightly git+https://github.com/keras-team/keras-cv.git
 ```
 
 Install TensorFlow, JAX, or PyTorch, whichever backend you'd like to use.

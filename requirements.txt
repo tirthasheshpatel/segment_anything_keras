@@ -1,12 +1,11 @@
 Pillow
 numpy
-tensorflow
+tf-nightly
 torch
 torchvision
 torchaudio
 jaxlib
 jax
-keras-core
-keras-cv
+keras-cv @ git+https://github.com/keras-team/keras-cv.git@master
 pycocotools
 opencv-python

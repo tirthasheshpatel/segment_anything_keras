@@ -11,10 +11,12 @@ from setuptools import find_packages, setup
 setup(
     name="sam_keras",
     version="0.0.1",
-    install_requires=["numpy", "Pillow", "keras-core", "keras-cv"],
+    # we also require keras-cv but since we depend on its source,
+    # we expect the user to install it separately.
+    install_requires=["numpy", "Pillow", "keras-nightly"],
     packages=find_packages(),
     extras_require={
-        "all": ["matplotlib", "pycocotools", "opencv-python", "tensorflow", "torch",
+        "all": ["matplotlib", "pycocotools", "opencv-python", "tf-nightly", "torch",
                 "torchvision", "torchaudio", "jax", "jaxlib"],
     },
 )

@@ -62,4 +62,18 @@ with `run_eagerly=True`.
 
 ## Benchmarks
 
-TODO
+All the benchmarks were run in Colab with following configurations:
+
+- For A100: 40 GB GPU RAM, 51 GB CPU RAM
+- For V100: 16 GB GPU RAM, 51 GB CPU RAM
+
+| Model                 | Device   | End-To-End Huge              | End-to-End Large              |  End-to-End Base              | Fixed Image              |
+| --------------------- | -------- | ---------------------------- | ----------------------------- | ----------------------------- | ------------------------ |
+| PyTorch Native        | A100     | 445 ms ± 4.76 ms             | 272 ms ± 3.73 ms              | 126 ms ± 624 µs               | 8.54 ms ± 53.2 µs        |
+| PyTorch (Keras 3)     | A100     | 482 ms ± 1.86 ms             | 293 ms ± 1.82 ms              | 146 ms ± 907 µs               | 36.4 ms ± 424 µs         |
+| TensorFlow (Keras 3)  | A100     | N/A                          | N/A                           | N/A                           | N/A                      |
+| **JAX (Keras 3)**     | **A100** | **125 ms ± 476 µs**          | **84.8 ms ± 193 µs**          | **44.2 ms ± 210 µs**          | **6.78 ms ± 135 µs**     |
+| PyTorch Native        | V100     | 585 ms ± 3.67 ms             | 339 ms ± 1.2 ms               | 153 ms ± 575 µs               | 8.54 ms ± 266 µs         |
+| PyTorch (Keras 3)     | V100     | 616 ms ± 1.22 ms             | 365 ms ± 2.52 ms              | 153 ms ± 575 µs               | 37.6 ms ± 1.09 ms        |
+| TensorFlow (Keras 3)  | V100     | N/A                          | N/A                           | N/A                           | N/A                      |
+| Jax (Keras 3)         | V100     | 545 ms ± 3.02 ms             | 313 ms ± 1.07 ms              | 125 ms ± 441 µs               | 7.17 ms ± 101 µs         |

@@ -8,7 +8,7 @@
 
 import numpy as np
 
-from keras_cv.backend import ops
+from keras import ops
 
 import math
 from copy import deepcopy

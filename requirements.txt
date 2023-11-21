@@ -6,6 +6,6 @@ torchvision
 torchaudio
 jaxlib
 jax
-keras-cv @ git+https://github.com/keras-team/keras-cv.git@master
+"keras-cv==0.7.0.dev0"
 pycocotools
 opencv-python

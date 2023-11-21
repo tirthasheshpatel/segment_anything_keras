@@ -7,8 +7,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
-from keras_cv.backend import ops
-from keras_cv.backend import keras
+import keras
+from keras import ops
 from keras_cv.layers.object_detection.non_max_suppression import non_max_suppression
 
 from sam_keras.amg_utils import (

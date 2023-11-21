@@ -1,6 +1,8 @@
+# Author: Tirth Patel (tirthasheshpatel@gmail.com)
+
 import numpy as np
-from keras_cv.backend import keras
-from keras_cv.backend import ops
+import keras
+from keras import ops
 
 
 __all__ = ["SAMPrompter"]

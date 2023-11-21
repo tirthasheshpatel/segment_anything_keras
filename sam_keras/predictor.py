@@ -7,7 +7,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
-from keras_cv.backend import ops
+from keras import ops
 from PIL import Image
 from .prompter import SAMPrompter
 

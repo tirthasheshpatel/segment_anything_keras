@@ -9,7 +9,13 @@
 import numpy as np
 import keras
 from keras import ops
-from keras_cv.layers.object_detection.non_max_suppression import non_max_suppression
+# TODO: KerasCV made the non_max_suppression layer internal since 0.7.0 release.
+#       Instead of trying to access the internals, copy-paste the code for
+#       non_max_suppression in this repo and use that instead.
+try:
+    from keras_cv.layers.object_detection.non_max_suppression import non_max_suppression
+except ImportError:
+    from keras_cv.src.layers.object_detection.non_max_suppression import non_max_suppression
 
 from sam_keras.amg_utils import (
     MaskData,

@@ -74,6 +74,10 @@ class SAMPredictor:
         self.pixel_std = ops.convert_to_tensor(pixel_std, dtype="float32")
         self.img_size = model.backbone.input.shape[1]
         self.transform = ResizeLongestSide(self.img_size)
+        self.prompter = SAMPrompter(
+            self.model.prompt_encoder,
+            self.model.mask_decoder
+        )
         self.reset_image()
 
     def set_image(self, image, **kwargs):
@@ -102,11 +106,6 @@ class SAMPredictor:
         self.unprocessed_image = transformed_image
         input_image = self.preprocess_images(transformed_image)
         self.features = self.model.backbone.predict(input_image, **kwargs)
-        self.prompter = SAMPrompter(
-            self.model.prompt_encoder,
-            self.model.mask_decoder,
-            feature_shape=self.features.shape[1:],
-        )
         self.is_image_set = True
 
     def _broadcast_batch(self, B, *args):
@@ -220,7 +219,6 @@ class SAMPredictor:
 
     def reset_image(self):
         """Resets the currently set image."""
-        self.prompter = None
         self.is_image_set = False
         self.unprocessed_image = None
         self.features = None

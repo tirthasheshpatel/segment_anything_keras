@@ -74,10 +74,7 @@ class SAMPredictor:
         self.pixel_std = ops.convert_to_tensor(pixel_std, dtype="float32")
         self.img_size = model.backbone.input.shape[1]
         self.transform = ResizeLongestSide(self.img_size)
-        self.prompter = SAMPrompter(
-            self.model.prompt_encoder,
-            self.model.mask_decoder
-        )
+        self.prompter = SAMPrompter(self.model.prompt_encoder, self.model.mask_decoder)
         self.reset_image()
 
     def set_image(self, image, **kwargs):

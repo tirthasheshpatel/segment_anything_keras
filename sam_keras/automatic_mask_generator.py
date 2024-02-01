@@ -9,13 +9,16 @@
 import numpy as np
 import keras
 from keras import ops
+
 # TODO: KerasCV made the non_max_suppression layer internal since 0.7.0 release.
 #       Instead of trying to access the internals, copy-paste the code for
 #       non_max_suppression in this repo and use that instead.
 try:
     from keras_cv.layers.object_detection.non_max_suppression import non_max_suppression
 except ImportError:
-    from keras_cv.src.layers.object_detection.non_max_suppression import non_max_suppression
+    from keras_cv.src.layers.object_detection.non_max_suppression import (
+        non_max_suppression,
+    )
 
 from sam_keras.amg_utils import (
     MaskData,
@@ -433,6 +436,11 @@ class SAMAutomaticMaskGenerator:
             iou_threshold=nms_thresh,
             max_output_size=self.max_output_masks,
         )
+
+        # We update the boxes directly in the loop below.
+        # Copy the boxes data since, for the tensorflow backend, Keras 3 returns
+        # readonly arrays which can't be mutated in-place.
+        mask_data["boxes"] = mask_data["boxes"].copy()
 
         # Only recalculate RLEs for masks that have changed
         for i_mask in keep_by_nms:

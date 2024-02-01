@@ -23,13 +23,25 @@ class MaskData:
 
     def __init__(self, **kwargs):
         for v in kwargs.values():
-            if not isinstance(v, list) and not ops.is_tensor(v):
-                raise ValueError("`MaskData` only supports `list` and tensors.")
+            if (
+                not isinstance(v, list)
+                and not ops.is_tensor(v)
+                and not isinstance(v, np.ndarray)
+            ):
+                raise ValueError(
+                    "`MaskData` only supports `list`, tensors, and numpy arrays."
+                )
         self._stats = dict(**kwargs)
 
     def __setitem__(self, key, item):
-        if not isinstance(item, list) and not ops.is_tensor(item):
-            raise ValueError("`MaskData` only supports `list` and tensors.")
+        if (
+            not isinstance(item, list)
+            and not ops.is_tensor(item)
+            and not isinstance(item, np.ndarray)
+        ):
+            raise ValueError(
+                "`MaskData` only supports `list`, tensors, and numpy arrays."
+            )
         self._stats[key] = item
 
     def __delitem__(self, key):

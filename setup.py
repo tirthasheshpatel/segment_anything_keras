@@ -13,10 +13,10 @@ setup(
     version="0.0.1",
     # we also require keras-cv but since we depend on its source,
     # we expect the user to install it separately.
-    install_requires=["numpy", "Pillow"],
+    install_requires=["numpy", "Pillow", "keras-cv"],
     packages=find_packages(),
     extras_require={
-        "all": ["matplotlib", "pycocotools", "opencv-python", "tf-nightly", "torch",
+        "all": ["matplotlib", "pycocotools", "opencv-python", "tensorflow", "torch",
                 "torchvision", "torchaudio", "jax", "jaxlib"],
     },
 )

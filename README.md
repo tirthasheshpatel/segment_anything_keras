@@ -3,8 +3,7 @@
 This is an implementation of the Segment Anything predictor and automatic mask
 generator in Keras 3.
 
-The demos uses KerasCV's Segment Anything model. Note that we depend on the
-KerasCV's source directly until v0.7.0 has branched.
+The demos uses KerasCV's Segment Anything model:
 
 - [Predictor demo](Segment_Anything_multi_backend_Keras_Demo.ipynb)
 - [Atomatic Mask Generator demo](Segment_Anything_Automatic_Mask_Generator_Demo.ipynb)
@@ -18,7 +17,7 @@ pip install git+https://github.com/tirthasheshpatel/segment_anything_keras.git
 Install the required dependencies:
 
 ```shell
-pip install Pillow numpy keras-nightly git+https://github.com/keras-team/keras-cv.git
+pip install -U Pillow numpy keras keras-cv
 ```
 
 Install TensorFlow, JAX, or PyTorch, whichever backend you'd like to use.
@@ -58,7 +57,7 @@ predictor = SAMPredictor(model)
 Right now JAX and TensorFlow have large compile-time overhead. Prompt encoder
 recompiles each time a different combination of prompts (points only,
 points + boxes, boxes only, etc) is passed. To avoid this, compile the model
-with `run_eagerly=True`.
+with `run_eagerly=True` and `jit_compile=False`.
 
 ## Benchmarks
 
@@ -72,7 +71,7 @@ All the benchmarks were run in Colab with following configurations:
 | PyTorch Native        | A100     | float32           | 445 ms ± 4.76 ms             | 272 ms ± 3.73 ms              | 126 ms ± 624 µs               | 8.54 ms ± 53.2 µs        |
 | PyTorch (Keras 3)     | A100     | float32           | 482 ms ± 1.86 ms             | 293 ms ± 1.82 ms              | 146 ms ± 907 µs               | 36.4 ms ± 424 µs         |
 | TensorFlow (Keras 3)  | A100     | float32           | 197 ms ± 2.12 ms             | 158 ms ± 1.05 ms              | 124 ms ± 577 µs               | 76.1 ms ± 515 µs         |
-| **JAX (Keras 3)**     | **A100** | float32           | **125 ms ± 476 µs**          | **84.8 ms ± 193 µs**          | **44.2 ms ± 210 µs**          | **6.78 ms ± 135 µs**     |
+| **JAX (Keras 3)**     | **A100** | **float32**       | **125 ms ± 476 µs**          | **84.8 ms ± 193 µs**          | **44.2 ms ± 210 µs**          | **6.78 ms ± 135 µs**     |
 | PyTorch Native        | V100     | float32           | 585 ms ± 3.67 ms             | 339 ms ± 1.2 ms               | 153 ms ± 575 µs               | 8.54 ms ± 266 µs         |
 | PyTorch (Keras 3)     | V100     | float32           | 616 ms ± 1.22 ms             | 365 ms ± 2.52 ms              | 153 ms ± 575 µs               | 37.6 ms ± 1.09 ms        |
 | TensorFlow (Keras 3)  | V100     | float32           | 585 ms ± 4.91 ms             | 380 ms ± 2.71 ms              | 205 ms ± 3.25 ms              | 79 ms ± 1.72 ms          |
